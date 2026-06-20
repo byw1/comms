@@ -21,6 +21,7 @@ import {
 import { isAiEnabled } from '@comms/ai';
 import { maybeAutoAssign } from './assign.js';
 import { onInboundSlaCsat } from './sla.js';
+import { runAutomations } from './automations.js';
 
 const log = logger.child({ module: 'ingest' });
 
@@ -247,13 +248,18 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
     inboxId: conn.inboxId,
   });
 
-  // SLA clock / CSAT capture on every inbound message.
+  // SLA clock / CSAT capture + per-message automations on every inbound message.
   if (isInbound) {
     await onInboundSlaCsat(conversation.id, conversation, bb.text).catch(() => {});
+    await runAutomations('message_received', conversation.id, { bodyText: bb.text }).catch(() => {});
   }
 
-  // For a brand-new conversation, auto-assign (if enabled) and auto-triage (if AI on).
+  // For a brand-new conversation: run new-conversation automations, then
+  // auto-assign (if still unassigned) and auto-triage (if AI on).
   if (created && isInbound) {
+    await runAutomations('conversation_created', conversation.id, { bodyText: bb.text }).catch(
+      () => {},
+    );
     await maybeAutoAssign(conversation.id, conn.inboxId).catch(() => {});
     if (isAiEnabled()) {
       await enqueueAi({ type: 'triage', conversationId: conversation.id }).catch(() => {});

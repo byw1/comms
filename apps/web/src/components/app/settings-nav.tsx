@@ -10,6 +10,7 @@ const ITEMS = [
   { href: '/settings/team', label: 'Team' },
   { href: '/settings/tags', label: 'Tags' },
   { href: '/settings/macros', label: 'Macros' },
+  { href: '/settings/automations', label: 'Automations' },
 ];
 
 export function SettingsNav() {

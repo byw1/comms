@@ -8,6 +8,7 @@ import {
   users,
   tags,
   macros,
+  automationRules,
 } from '@comms/db';
 import { db } from '@/server/db';
 
@@ -105,6 +106,10 @@ export async function listTags() {
 
 export async function listMacros() {
   return db.query.macros.findMany({ orderBy: [asc(macros.name)] });
+}
+
+export async function listAutomationRules() {
+  return db.query.automationRules.findMany({ orderBy: [asc(automationRules.sortOrder)] });
 }
 
 export async function inboxCounts(currentUserId: string) {

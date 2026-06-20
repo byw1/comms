@@ -22,6 +22,13 @@
       "when": 1781989268390,
       "tag": "0002_chemical_zaladane",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781990480857,
+      "tag": "0003_flashy_patch",
+      "breakpoints": true
     }
   ]
 }

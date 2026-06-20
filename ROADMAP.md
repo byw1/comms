@@ -39,15 +39,16 @@ What makes Comms enterprise rather than a personal bridge.
 - ⬜ Co-drafting a single reply (shared draft)
 - ⬜ Skills-based / business-hours routing; escalation / handoff with context
 
-## Wave 3 — Workflow & ticketing depth 🚧
+## Wave 3 — Workflow & ticketing depth ✅ (core)
 
 - ✅ SLA timers + breach alerts (response-due clock, breach sweep, assignee notify)
 - ✅ CSAT surveys delivered over iMessage after resolution (1–5 capture)
-- ⬜ Automations: triggers → conditions → actions, with a visual builder
-- ⬜ Saved views / custom inboxes / advanced filters
-- ⬜ Merge / split / link conversations; bulk actions
-- ⬜ Entity resolution: unify a person across phone/email/SMS/iMessage handles
-- ⬜ Business-hours-aware SLA + pause-on-pending
+- ✅ Automations engine: triggers (new conversation / inbound) → keyword
+  conditions → actions (status/priority/assign/tags), with a no-code rule builder
+- ✅ Bulk actions (multi-select close/reopen in the conversation list)
+- ✅ Pause-on-pending SLA (clock pauses when not actively open)
+- ⬜ Saved views / custom inboxes; merge/split/link; cross-handle entity resolution
+- ⬜ Full business-hours-aware SLA windows
 
 ## Wave 4 — Performance & UX excellence
 

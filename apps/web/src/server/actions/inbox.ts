@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { eq, and } from '@comms/db';
+import { eq, and, inArray } from '@comms/db';
 import { conversations, messages, conversationTags, users, notifications, inboxes } from '@comms/db';
 import { newTempGuid, enqueueOutbound, publishEvent } from '@comms/core';
 import { db } from '@/server/db';
@@ -149,6 +149,8 @@ export async function updateConversation(input: {
   if (input.status && input.status !== conv.status) {
     patch.status = input.status;
     if (input.status === 'closed') patch.closedAt = new Date();
+    // Pause the SLA response clock while not actively open (pending/snoozed/closed).
+    if (input.status !== 'open') patch.nextResponseDueAt = null;
     events.push(`marked the ticket as ${input.status}`);
   }
   if (input.priority && input.priority !== conv.priority) {
@@ -231,6 +233,28 @@ export async function toggleTag(conversationId: string, tagId: string): Promise<
     await db.insert(conversationTags).values({ conversationId, tagId }).onConflictDoNothing();
   }
   revalidatePath(`/inbox/${conversationId}`);
+  return { ok: true };
+}
+
+/** Apply a status/assignee change to many conversations at once. */
+export async function bulkUpdateConversations(
+  ids: string[],
+  patch: { status?: 'open' | 'pending' | 'closed'; assigneeId?: string | null },
+): Promise<ActionResult> {
+  await requireUser();
+  if (ids.length === 0) return { ok: true };
+
+  const set: Partial<typeof conversations.$inferInsert> = {};
+  if (patch.status) {
+    set.status = patch.status;
+    if (patch.status === 'closed') set.closedAt = new Date();
+    if (patch.status !== 'open') set.nextResponseDueAt = null;
+  }
+  if (patch.assigneeId !== undefined) set.assigneeId = patch.assigneeId;
+  if (Object.keys(set).length === 0) return { ok: true };
+
+  await db.update(conversations).set(set).where(inArray(conversations.id, ids));
+  revalidatePath('/inbox');
   return { ok: true };
 }
 
