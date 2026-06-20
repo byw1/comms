@@ -1,0 +1,85 @@
+import { Queue, type JobsOptions } from 'bullmq';
+import { createRedis } from './redis.js';
+
+export const QUEUE_NAMES = {
+  inbound: 'comms:inbound',
+  outbound: 'comms:outbound',
+  attachments: 'comms:attachments',
+  maintenance: 'comms:maintenance',
+} as const;
+
+export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
+
+// ---- Job payloads -----------------------------------------------------------
+
+/** A raw BlueBubbles webhook/socket event handed to the inbound processor. */
+export interface InboundJob {
+  connectionId: string;
+  type: string; // 'new-message' | 'updated-message' | 'typing-indicator' | …
+  data: unknown; // the BlueBubbles event payload
+  receivedAt: number;
+}
+
+/** Send a previously-persisted (queued) message out through the provider. */
+export interface OutboundJob {
+  messageId: string;
+  conversationId: string;
+  connectionId: string;
+}
+
+/** Download an attachment from the provider and store it in S3. */
+export interface AttachmentJob {
+  attachmentId: string;
+  connectionId: string;
+  providerAttachmentGuid: string;
+}
+
+export type MaintenanceJob =
+  | { type: 'backfill'; connectionId: string; since?: number }
+  | { type: 'heartbeat'; connectionId: string }
+  | { type: 'unsnooze' };
+
+// ---- Queue singletons -------------------------------------------------------
+
+const queues = new Map<string, Queue>();
+
+function getQueue<T>(name: QueueName): Queue<T> {
+  const existing = queues.get(name);
+  if (existing) return existing as unknown as Queue<T>;
+  const q = new Queue(name, {
+    connection: createRedis(),
+    defaultJobOptions: {
+      attempts: 5,
+      backoff: { type: 'exponential', delay: 2000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  });
+  queues.set(name, q);
+  return q as unknown as Queue<T>;
+}
+
+export const inboundQueue = () => getQueue<InboundJob>(QUEUE_NAMES.inbound);
+export const outboundQueue = () => getQueue<OutboundJob>(QUEUE_NAMES.outbound);
+export const attachmentsQueue = () => getQueue<AttachmentJob>(QUEUE_NAMES.attachments);
+export const maintenanceQueue = () => getQueue<MaintenanceJob>(QUEUE_NAMES.maintenance);
+
+export async function enqueueInbound(job: InboundJob, opts?: JobsOptions) {
+  return inboundQueue().add('inbound', job, opts);
+}
+
+export async function enqueueOutbound(job: OutboundJob, opts?: JobsOptions) {
+  // Hint ordering by conversation; true per-chat serialization is enforced by a
+  // Redis lock in the worker processor.
+  return outboundQueue().add('outbound', job, opts);
+}
+
+export async function enqueueAttachment(job: AttachmentJob, opts?: JobsOptions) {
+  return attachmentsQueue().add('attachment', job, opts);
+}
+
+export async function enqueueMaintenance(job: MaintenanceJob, opts?: JobsOptions) {
+  return maintenanceQueue().add('maintenance', job, opts);
+}
+
+export { Queue };

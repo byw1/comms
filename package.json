@@ -1,0 +1,36 @@
+{
+  "name": "comms",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Comms — an open-source, self-hostable team inbox + ticketing platform for iMessage (via BlueBubbles) and beyond.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm --filter @comms/db build && pnpm --filter @comms/core build && pnpm --filter @comms/worker build && pnpm --filter @comms/web build",
+    "dev": "pnpm --parallel --filter @comms/web --filter @comms/worker dev",
+    "dev:web": "pnpm --filter @comms/web dev",
+    "dev:worker": "pnpm --filter @comms/worker dev",
+    "start:web": "pnpm --filter @comms/web start",
+    "start:worker": "pnpm --filter @comms/worker start",
+    "lint": "pnpm -r --no-bail lint",
+    "typecheck": "pnpm -r --no-bail typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "db:generate": "pnpm --filter @comms/db generate",
+    "db:migrate": "pnpm --filter @comms/db migrate",
+    "db:push": "pnpm --filter @comms/db push",
+    "db:studio": "pnpm --filter @comms/db studio"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "ioredis": "^5.11.1"
+    }
+  }
+}

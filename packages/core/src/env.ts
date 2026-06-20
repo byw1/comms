@@ -1,0 +1,115 @@
+import { z } from 'zod';
+
+/**
+ * Centralized, validated configuration. The design goal is "almost zero required
+ * env vars on Railway": DATABASE_URL / REDIS_URL come from referenced services,
+ * APP_SECRET is auto-generated via ${{ secret() }}, and the public URL is derived
+ * from RAILWAY_PUBLIC_DOMAIN. Everything else (SMTP, OAuth, S3) is optional and
+ * can be configured later from the in-app settings.
+ */
+const schema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+
+  DATABASE_URL: z.string().min(1).optional(),
+  REDIS_URL: z.string().min(1).optional(),
+
+  // Single shared secret used for session signing + encrypting integration
+  // credentials at rest. On Railway this is generated with ${{ secret() }}.
+  APP_SECRET: z.string().min(16).optional(),
+  AUTH_SECRET: z.string().min(16).optional(),
+
+  // Public URL handling. Prefer an explicit APP_URL; otherwise derive from Railway.
+  APP_URL: z.string().url().optional(),
+  RAILWAY_PUBLIC_DOMAIN: z.string().optional(),
+  PORT: z.coerce.number().default(3000),
+
+  // S3-compatible object storage (Railway Storage Bucket, R2, MinIO, AWS, …).
+  // Optional: when unset, attachment storage is disabled but messaging still works.
+  S3_ENDPOINT: z.string().optional(),
+  S3_REGION: z.string().default('auto'),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_BUCKET: z.string().optional(),
+  S3_FORCE_PATH_STYLE: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+
+  // SMTP (magic-link sign-in, invites, notifications). Optional.
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
+
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+});
+
+export type RawEnv = z.infer<typeof schema>;
+
+let cached: AppConfig | undefined;
+
+export interface AppConfig extends RawEnv {
+  appUrl: string;
+  appSecret: string;
+  authSecret: string;
+  storageEnabled: boolean;
+  smtpEnabled: boolean;
+}
+
+function resolveAppUrl(env: RawEnv): string {
+  if (env.APP_URL) return env.APP_URL.replace(/\/$/, '');
+  if (env.RAILWAY_PUBLIC_DOMAIN) return `https://${env.RAILWAY_PUBLIC_DOMAIN}`;
+  return `http://localhost:${env.PORT}`;
+}
+
+/**
+ * Parse and cache config. Throws with a readable summary if validation fails.
+ * `requireRuntime` enforces the vars needed to actually run (DB/Redis/secret);
+ * keep it false for build-time contexts where those aren't present yet.
+ */
+export function loadConfig(requireRuntime = false): AppConfig {
+  if (cached) return cached;
+
+  const parsed = schema.safeParse(process.env);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
+    throw new Error(`Invalid environment configuration:\n${issues}`);
+  }
+  const env = parsed.data;
+
+  const appSecret = env.APP_SECRET ?? env.AUTH_SECRET;
+  const authSecret = env.AUTH_SECRET ?? env.APP_SECRET;
+
+  if (requireRuntime) {
+    const missing: string[] = [];
+    if (!env.DATABASE_URL) missing.push('DATABASE_URL');
+    if (!env.REDIS_URL) missing.push('REDIS_URL');
+    if (!appSecret) missing.push('APP_SECRET (or AUTH_SECRET)');
+    if (missing.length) {
+      throw new Error(
+        `Missing required runtime configuration: ${missing.join(', ')}.\n` +
+          'On Railway these are wired automatically (Postgres/Redis references + ${{ secret() }}).',
+      );
+    }
+  }
+
+  cached = {
+    ...env,
+    appUrl: resolveAppUrl(env),
+    appSecret: appSecret ?? 'insecure-dev-secret-change-me',
+    authSecret: authSecret ?? 'insecure-dev-secret-change-me',
+    storageEnabled: Boolean(
+      env.S3_ENDPOINT && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY && env.S3_BUCKET,
+    ),
+    smtpEnabled: Boolean(env.SMTP_HOST && env.SMTP_FROM),
+  };
+  return cached;
+}
+
+/** Reset the cache (tests only). */
+export function _resetConfigCache() {
+  cached = undefined;
+}
