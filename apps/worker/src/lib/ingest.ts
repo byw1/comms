@@ -20,6 +20,7 @@ import {
 } from '@comms/core';
 import { isAiEnabled } from '@comms/ai';
 import { maybeAutoAssign } from './assign.js';
+import { onInboundSlaCsat } from './sla.js';
 
 const log = logger.child({ module: 'ingest' });
 
@@ -245,6 +246,11 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
     conversationId: conversation.id,
     inboxId: conn.inboxId,
   });
+
+  // SLA clock / CSAT capture on every inbound message.
+  if (isInbound) {
+    await onInboundSlaCsat(conversation.id, conversation, bb.text).catch(() => {});
+  }
 
   // For a brand-new conversation, auto-assign (if enabled) and auto-triage (if AI on).
   if (created && isInbound) {

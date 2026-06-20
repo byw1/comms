@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn, initials } from '@/lib/utils';
-import { listTime } from '@/lib/format';
+import { listTime, relativeTime } from '@/lib/format';
 import type { ConversationListItem } from '@/server/queries';
 
 const PRIORITY_COLOR: Record<string, string> = {
@@ -133,6 +133,15 @@ export function ConversationListPane({
                     {c.unreadCount > 0 && (
                       <Badge className="h-4 px-1.5 text-[10px]">{c.unreadCount}</Badge>
                     )}
+                    {c.slaBreachedAt ? (
+                      <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
+                        Overdue
+                      </Badge>
+                    ) : c.nextResponseDueAt && c.status !== 'closed' ? (
+                      <span className="text-[10px] text-warning">
+                        due {relativeTime(c.nextResponseDueAt)}
+                      </span>
+                    ) : null}
                     {c.status !== 'open' && c.status !== 'closed' && (
                       <Badge variant="outline" className="h-4 px-1.5 text-[10px] capitalize">
                         {c.status}

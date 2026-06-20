@@ -38,7 +38,8 @@ export interface AttachmentJob {
 export type MaintenanceJob =
   | { type: 'backfill'; connectionId: string; since?: number }
   | { type: 'heartbeat'; connectionId: string }
-  | { type: 'unsnooze' };
+  | { type: 'unsnooze' }
+  | { type: 'sla' };
 
 /** Background AI work (auto-triage of a conversation, etc.). */
 export type AiJob = { type: 'triage'; conversationId: string };

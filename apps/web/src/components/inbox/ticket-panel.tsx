@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { updateConversation, toggleTag } from '@/server/actions/inbox';
+import { relativeTime } from '@/lib/format';
 import { cn, initials } from '@/lib/utils';
 
 const UNASSIGNED = '__unassigned__';
@@ -23,6 +24,7 @@ export function TicketPanel({
   agents,
   allTags,
   ai,
+  sla,
 }: {
   conversation: {
     id: string;
@@ -37,6 +39,11 @@ export function TicketPanel({
   agents: { id: string; name: string | null; email: string }[];
   allTags: { id: string; name: string; color: string }[];
   ai?: { summary?: string; topic?: string; sentiment?: string } | null;
+  sla?: {
+    nextResponseDueAt: Date | string | null;
+    slaBreachedAt: Date | string | null;
+    csatScore: number | null;
+  } | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -199,6 +206,27 @@ export function TicketPanel({
           </div>
         )}
       </section>
+
+      {(sla?.slaBreachedAt || sla?.nextResponseDueAt || sla?.csatScore != null) && (
+        <>
+          <Separator />
+          <section className="space-y-1.5 text-xs">
+            {sla.slaBreachedAt ? (
+              <p className="font-medium text-destructive">SLA breached — response overdue</p>
+            ) : sla.nextResponseDueAt ? (
+              <p className="text-muted-foreground">
+                Response due{' '}
+                <span className="text-foreground">{relativeTime(sla.nextResponseDueAt)}</span>
+              </p>
+            ) : null}
+            {sla.csatScore != null && (
+              <p className="text-muted-foreground">
+                CSAT: <span className="text-foreground">{sla.csatScore}/5</span>
+              </p>
+            )}
+          </section>
+        </>
+      )}
 
       <Separator />
 

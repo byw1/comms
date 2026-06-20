@@ -193,6 +193,8 @@ export async function updateInboxSettings(
     autoAssign?: boolean;
     assignStrategy?: 'round_robin' | 'least_busy';
     markReadOnReply?: boolean;
+    csatEnabled?: boolean;
+    csatMessage?: string;
   },
 ): Promise<{ ok: boolean }> {
   await requireAdmin();

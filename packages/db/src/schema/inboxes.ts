@@ -19,6 +19,8 @@ export const inboxes = pgTable('inboxes', {
       assignStrategy?: 'round_robin' | 'least_busy';
       markReadOnReply?: boolean;
       sendTypingIndicators?: boolean;
+      csatEnabled?: boolean;
+      csatMessage?: string;
     }>()
     .notNull()
     .default({}),

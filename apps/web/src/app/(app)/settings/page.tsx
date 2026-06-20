@@ -1,6 +1,7 @@
-import { getOrgSettings } from '@/server/settings';
+import { getOrgSettings, getSetting } from '@/server/settings';
 import { getCurrentUser } from '@/lib/session';
 import { GeneralForm } from '@/components/settings/general-form';
+import { SlaForm } from '@/components/settings/sla-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const dynamic = 'force-dynamic';
@@ -8,6 +9,8 @@ export const dynamic = 'force-dynamic';
 export default async function GeneralSettingsPage() {
   const org = await getOrgSettings();
   const user = await getCurrentUser();
+  const sla =
+    (await getSetting<{ firstResponseMinutes?: number; nextResponseMinutes?: number }>('sla')) ?? {};
 
   return (
     <div className="space-y-6">
@@ -17,6 +20,15 @@ export default async function GeneralSettingsPage() {
         </CardHeader>
         <CardContent>
           <GeneralForm orgName={org.orgName ?? 'Comms'} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Service-level targets (SLA)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SlaForm sla={sla} />
         </CardContent>
       </Card>
 

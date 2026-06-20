@@ -4,6 +4,7 @@ import { getDb, eq, and, lte } from '@comms/db';
 import { channelConnections, conversations } from '@comms/db';
 import { loadConnection } from '../lib/connection.js';
 import { ingestNewMessage } from '../lib/ingest.js';
+import { checkSlaBreaches } from '../lib/sla.js';
 
 const log = logger.child({ module: 'maintenance' });
 
@@ -95,5 +96,7 @@ export async function processMaintenance(job: Job<MaintenanceJob>): Promise<void
       return backfill(data.connectionId, data.since);
     case 'unsnooze':
       return unsnooze();
+    case 'sla':
+      return checkSlaBreaches();
   }
 }

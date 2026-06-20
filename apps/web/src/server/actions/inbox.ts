@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { eq, and } from '@comms/db';
-import { conversations, messages, conversationTags, users, notifications } from '@comms/db';
+import { conversations, messages, conversationTags, users, notifications, inboxes } from '@comms/db';
 import { newTempGuid, enqueueOutbound, publishEvent } from '@comms/core';
 import { db } from '@/server/db';
 import { requireUser } from '@/lib/session';
@@ -91,6 +91,8 @@ export async function sendMessage(input: {
       lastMessagePreview: input.isPrivateNote ? `📝 ${body.slice(0, 200)}` : body.slice(0, 280),
       unreadCount: 0,
       firstResponseAt: conv.firstResponseAt ?? (input.isPrivateNote ? null : new Date()),
+      // A real reply (not an internal note) satisfies the SLA response clock.
+      ...(input.isPrivateNote ? {} : { nextResponseDueAt: null, slaBreachedAt: null }),
     })
     .where(eq(conversations.id, conv.id));
 
@@ -165,6 +167,42 @@ export async function updateConversation(input: {
 
   await db.update(conversations).set(patch).where(eq(conversations.id, conv.id));
   for (const e of events) await systemEvent(conv.id, conv.inboxId, `${user.name ?? 'Agent'} ${e}`, user.id);
+
+  // On close, optionally send a CSAT survey over the channel and await the rating.
+  if (input.status === 'closed' && conv.status !== 'closed') {
+    const inbox = await db.query.inboxes.findFirst({ where: eq(inboxes.id, conv.inboxId) });
+    const connection = await getConnectionForInbox(conv.inboxId);
+    if (inbox?.settings?.csatEnabled && connection) {
+      const body =
+        inbox.settings.csatMessage ||
+        'Thanks for reaching out! How would you rate your support experience? Reply with a number from 1 (poor) to 5 (great).';
+      const [m] = await db
+        .insert(messages)
+        .values({
+          conversationId: conv.id,
+          direction: 'outbound',
+          authorType: 'agent',
+          authorUserId: user.id,
+          body,
+          status: 'queued',
+          tempGuid: newTempGuid(),
+        })
+        .returning();
+      if (m) {
+        await enqueueOutbound({
+          messageId: m.id,
+          conversationId: conv.id,
+          connectionId: connection.id,
+        });
+      }
+      await db
+        .update(conversations)
+        .set({
+          metadata: { ...(conv.metadata ?? {}), csat: { awaiting: true, at: new Date().toISOString() } },
+        })
+        .where(eq(conversations.id, conv.id));
+    }
+  }
 
   await publishEvent({ type: 'conversation.updated', conversationId: conv.id, inboxId: conv.inboxId });
   revalidatePath('/inbox');

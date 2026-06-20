@@ -66,6 +66,7 @@ async function main() {
     const reconcile = tick % 5 === 0;
     try {
       await enqueueMaintenance({ type: 'unsnooze' });
+      await enqueueMaintenance({ type: 'sla' });
       const conns = await getDb()
         .select({ id: channelConnections.id })
         .from(channelConnections);

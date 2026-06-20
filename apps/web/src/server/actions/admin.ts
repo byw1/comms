@@ -97,3 +97,20 @@ export async function updateOrgName(orgName: string): Promise<ActionResult> {
   revalidatePath('/settings');
   return { ok: true };
 }
+
+export async function updateSlaSettings(input: {
+  firstResponseMinutes?: number;
+  nextResponseMinutes?: number;
+}): Promise<ActionResult> {
+  await requireAdmin();
+  await setSetting('sla', {
+    firstResponseMinutes: input.firstResponseMinutes && input.firstResponseMinutes > 0
+      ? input.firstResponseMinutes
+      : undefined,
+    nextResponseMinutes: input.nextResponseMinutes && input.nextResponseMinutes > 0
+      ? input.nextResponseMinutes
+      : undefined,
+  });
+  revalidatePath('/settings');
+  return { ok: true };
+}

@@ -80,6 +80,11 @@ export default async function ConversationPage({
         agents={agents.map((a) => ({ id: a.id, name: a.name, email: a.email }))}
         allTags={tags.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
         ai={ai ? { summary: ai.summary, topic: ai.topic, sentiment: ai.sentiment } : null}
+        sla={{
+          nextResponseDueAt: conversation.nextResponseDueAt,
+          slaBreachedAt: conversation.slaBreachedAt,
+          csatScore: conversation.csatScore,
+        }}
       />
     </div>
   );

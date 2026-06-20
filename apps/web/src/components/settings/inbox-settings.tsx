@@ -18,6 +18,7 @@ type Settings = {
   autoAssign?: boolean;
   assignStrategy?: 'round_robin' | 'least_busy';
   markReadOnReply?: boolean;
+  csatEnabled?: boolean;
 };
 
 export function InboxSettings({ inboxId, settings }: { inboxId: string; settings: Settings }) {
@@ -28,6 +29,7 @@ export function InboxSettings({ inboxId, settings }: { inboxId: string; settings
     settings.assignStrategy ?? 'round_robin',
   );
   const [markRead, setMarkRead] = useState(Boolean(settings.markReadOnReply));
+  const [csat, setCsat] = useState(Boolean(settings.csatEnabled));
 
   function save(patch: Settings) {
     start(async () => {
@@ -90,6 +92,23 @@ export function InboxSettings({ inboxId, settings }: { inboxId: string; settings
           onCheckedChange={(v) => {
             setMarkRead(v);
             save({ markReadOnReply: v });
+          }}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium">Send CSAT survey on close</p>
+          <p className="text-xs text-muted-foreground">
+            Ask the customer to rate 1–5 over iMessage when a ticket is closed.
+          </p>
+        </div>
+        <Switch
+          checked={csat}
+          disabled={pending}
+          onCheckedChange={(v) => {
+            setCsat(v);
+            save({ csatEnabled: v });
           }}
         />
       </div>

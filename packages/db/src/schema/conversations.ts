@@ -51,6 +51,10 @@ export const conversations = pgTable(
 
     // SLA / metrics
     firstResponseAt: timestamp('first_response_at', { withTimezone: true }),
+    firstResponseDueAt: timestamp('first_response_due_at', { withTimezone: true }),
+    nextResponseDueAt: timestamp('next_response_due_at', { withTimezone: true }),
+    slaBreachedAt: timestamp('sla_breached_at', { withTimezone: true }),
+    csatScore: integer('csat_score'),
     closedAt: timestamp('closed_at', { withTimezone: true }),
 
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
