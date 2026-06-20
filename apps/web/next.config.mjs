@@ -10,7 +10,14 @@ const nextConfig = {
   outputFileTracingRoot: path.join(__dirname, '../../'),
   eslint: { ignoreDuringBuilds: true },
   // Keep native/node-only libs external to the bundle (used only in server code).
-  serverExternalPackages: ['pg', 'bullmq', 'ioredis', '@aws-sdk/client-s3', 'nodemailer'],
+  serverExternalPackages: [
+    'pg',
+    'bullmq',
+    'ioredis',
+    '@aws-sdk/client-s3',
+    'nodemailer',
+    '@anthropic-ai/sdk',
+  ],
   experimental: {
     serverActions: { bodySizeLimit: '25mb' },
   },

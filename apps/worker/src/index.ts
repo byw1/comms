@@ -13,6 +13,7 @@ import { processInbound } from './processors/inbound.js';
 import { processOutbound } from './processors/outbound.js';
 import { processAttachment } from './processors/attachments.js';
 import { processMaintenance } from './processors/maintenance.js';
+import { processAiJob } from './processors/ai.js';
 
 const log = logger.child({ service: 'worker' });
 
@@ -37,6 +38,10 @@ async function main() {
       connection: createRedis(),
       concurrency: 2,
     }),
+    new Worker(QUEUE_NAMES.ai, processAiJob, {
+      connection: createRedis(),
+      concurrency: 3,
+    }),
   ];
 
   for (const w of workers) {
@@ -48,12 +53,17 @@ async function main() {
 
   log.info('Comms worker started');
 
-  // Periodic sweep: heartbeat each connection + unsnooze due conversations.
+  // Periodic sweep: heartbeat each connection + unsnooze due conversations, and
+  // every 5th tick run a reconcile backfill to heal any messages missed while the
+  // webhook endpoint was down (BlueBubbles does not redeliver webhooks).
   // A short Redis lock ensures only one replica sweeps each tick.
+  let tick = 0;
   const sweep = async () => {
     const redis = getRedis();
     const got = await redis.set('comms:sweep:lock', '1', 'PX', 55_000, 'NX');
     if (!got) return;
+    tick += 1;
+    const reconcile = tick % 5 === 0;
     try {
       await enqueueMaintenance({ type: 'unsnooze' });
       const conns = await getDb()
@@ -61,6 +71,7 @@ async function main() {
         .from(channelConnections);
       for (const c of conns) {
         await enqueueMaintenance({ type: 'heartbeat', connectionId: c.id });
+        if (reconcile) await enqueueMaintenance({ type: 'backfill', connectionId: c.id });
       }
     } catch (err) {
       log.warn({ err: (err as Error).message }, 'sweep failed');

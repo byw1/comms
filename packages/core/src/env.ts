@@ -35,6 +35,15 @@ const schema = z.object({
     .default('true')
     .transform((v) => v === 'true'),
 
+  // AI features (summarization, suggested replies, auto-triage). Optional —
+  // when ANTHROPIC_API_KEY is unset, AI features are disabled and degrade cleanly.
+  ANTHROPIC_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().default('claude-opus-4-8'),
+
+  // Outbound send pacing: minimum ms between sends per connection, to stay under
+  // Apple's iMessage throttling. Applied globally per BlueBubbles number.
+  SEND_MIN_INTERVAL_MS: z.coerce.number().default(800),
+
   // SMTP (magic-link sign-in, invites, notifications). Optional.
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),
@@ -55,6 +64,7 @@ export interface AppConfig extends RawEnv {
   authSecret: string;
   storageEnabled: boolean;
   smtpEnabled: boolean;
+  aiEnabled: boolean;
 }
 
 function resolveAppUrl(env: RawEnv): string {
@@ -105,6 +115,7 @@ export function loadConfig(requireRuntime = false): AppConfig {
       env.S3_ENDPOINT && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY && env.S3_BUCKET,
     ),
     smtpEnabled: Boolean(env.SMTP_HOST && env.SMTP_FROM),
+    aiEnabled: Boolean(env.ANTHROPIC_API_KEY),
   };
   return cached;
 }

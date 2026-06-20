@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@comms/ai": "workspace:*",
     "@comms/core": "workspace:*",
     "@comms/db": "workspace:*",
     "bullmq": "^5.34.5",

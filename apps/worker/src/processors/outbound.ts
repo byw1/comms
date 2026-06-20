@@ -4,6 +4,8 @@ import {
   type BBSendMethod,
   getObjectBytes,
   publishEvent,
+  awaitSendSlot,
+  loadConfig,
   logger,
 } from '@comms/core';
 import { getDb, eq } from '@comms/db';
@@ -46,6 +48,9 @@ export async function processOutbound(job: Job<OutboundJob>): Promise<void> {
     });
 
     try {
+      // Pace sends per number to stay under Apple's iMessage throttling.
+      await awaitSendSlot(connectionId, loadConfig().SEND_MIN_INTERVAL_MS);
+
       const attachment = msg.attachments?.find((a) => a.storageKey);
       let providerGuid: string | undefined;
 

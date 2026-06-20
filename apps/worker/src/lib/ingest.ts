@@ -14,9 +14,11 @@ import {
   parseChatGuid,
   reactionFromAssociatedType,
   enqueueAttachment,
+  enqueueAi,
   publishEvent,
   logger,
 } from '@comms/core';
+import { isAiEnabled } from '@comms/ai';
 
 const log = logger.child({ module: 'ingest' });
 
@@ -50,7 +52,7 @@ async function ensureConversation(
   chatGuid: string,
   contactId: string | null,
   meta: { title?: string | null },
-): Promise<typeof conversations.$inferSelect> {
+): Promise<{ conversation: typeof conversations.$inferSelect; created: boolean }> {
   const db = getDb();
   const parsed = parseChatGuid(chatGuid);
 
@@ -60,7 +62,7 @@ async function ensureConversation(
       eq(conversations.providerChatGuid, chatGuid),
     ),
   });
-  if (found) return found;
+  if (found) return { conversation: found, created: false };
 
   const inserted = await db
     .insert(conversations)
@@ -80,7 +82,7 @@ async function ensureConversation(
       conversationId: inserted[0].id,
       inboxId,
     });
-    return inserted[0];
+    return { conversation: inserted[0], created: true };
   }
 
   // Lost a race — fetch the row the other worker created.
@@ -91,7 +93,7 @@ async function ensureConversation(
     ),
   });
   if (!existing) throw new Error(`Failed to upsert conversation for ${chatGuid}`);
-  return existing;
+  return { conversation: existing, created: false };
 }
 
 /** Insert attachment rows (pending) and enqueue downloads to S3. */
@@ -188,7 +190,7 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
       ? await resolveContact(bb.handle.address, bb.chats?.[0]?.displayName)
       : null;
 
-  const conversation = await ensureConversation(conn.inboxId, chatGuid, contactId, {
+  const { conversation, created } = await ensureConversation(conn.inboxId, chatGuid, contactId, {
     title: bb.chats?.[0]?.displayName,
   });
 
@@ -242,6 +244,11 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
     conversationId: conversation.id,
     inboxId: conn.inboxId,
   });
+
+  // Auto-triage a brand-new conversation the moment a customer first writes in.
+  if (created && isInbound && isAiEnabled()) {
+    await enqueueAi({ type: 'triage', conversationId: conversation.id }).catch(() => {});
+  }
 }
 
 /** Ingest an `updated-message` event (delivered / read / edited / unsent). */

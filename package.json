@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "pnpm --filter @comms/db build && pnpm --filter @comms/core build && pnpm --filter @comms/worker build && pnpm --filter @comms/web build",
+    "build": "pnpm --filter @comms/db build && pnpm --filter @comms/core build && pnpm --filter @comms/ai build && pnpm --filter @comms/worker build && pnpm --filter @comms/web build",
     "dev": "pnpm --parallel --filter @comms/web --filter @comms/worker dev",
     "dev:web": "pnpm --filter @comms/web dev",
     "dev:worker": "pnpm --filter @comms/worker dev",

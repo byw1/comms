@@ -14,14 +14,17 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { sendMessage } from '@/server/actions/inbox';
+import { AiAssist } from '@/components/inbox/ai-assist';
 import { cn } from '@/lib/utils';
 
 export function Composer({
   conversationId,
   macros,
+  aiEnabled,
 }: {
   conversationId: string;
   macros: { id: string; name: string; body: string }[];
+  aiEnabled: boolean;
 }) {
   const router = useRouter();
   const [body, setBody] = useState('');
@@ -65,30 +68,33 @@ export function Composer({
             Internal note
           </Label>
         </div>
-        {macros.length > 0 && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs">
-                <Zap className="h-3.5 w-3.5" />
-                Macros
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-72 p-1">
-              <div className="max-h-64 overflow-y-auto">
-                {macros.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => insertMacro(m.body)}
-                    className="flex w-full flex-col items-start rounded-md px-2.5 py-2 text-left text-sm hover:bg-accent"
-                  >
-                    <span className="font-medium">{m.name}</span>
-                    <span className="line-clamp-1 text-xs text-muted-foreground">{m.body}</span>
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-        )}
+        <div className="flex items-center gap-1">
+          {aiEnabled && <AiAssist conversationId={conversationId} onDraft={setBody} />}
+          {macros.length > 0 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs">
+                  <Zap className="h-3.5 w-3.5" />
+                  Macros
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 p-1">
+                <div className="max-h-64 overflow-y-auto">
+                  {macros.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => insertMacro(m.body)}
+                      className="flex w-full flex-col items-start rounded-md px-2.5 py-2 text-left text-sm hover:bg-accent"
+                    >
+                      <span className="font-medium">{m.name}</span>
+                      <span className="line-clamp-1 text-xs text-muted-foreground">{m.body}</span>
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+        </div>
       </div>
 
       <div className="flex items-end gap-2">

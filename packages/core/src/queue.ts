@@ -6,6 +6,7 @@ export const QUEUE_NAMES = {
   outbound: 'comms:outbound',
   attachments: 'comms:attachments',
   maintenance: 'comms:maintenance',
+  ai: 'comms:ai',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -39,6 +40,9 @@ export type MaintenanceJob =
   | { type: 'heartbeat'; connectionId: string }
   | { type: 'unsnooze' };
 
+/** Background AI work (auto-triage of a conversation, etc.). */
+export type AiJob = { type: 'triage'; conversationId: string };
+
 // ---- Queue singletons -------------------------------------------------------
 
 const queues = new Map<string, Queue>();
@@ -63,6 +67,7 @@ export const inboundQueue = () => getQueue<InboundJob>(QUEUE_NAMES.inbound);
 export const outboundQueue = () => getQueue<OutboundJob>(QUEUE_NAMES.outbound);
 export const attachmentsQueue = () => getQueue<AttachmentJob>(QUEUE_NAMES.attachments);
 export const maintenanceQueue = () => getQueue<MaintenanceJob>(QUEUE_NAMES.maintenance);
+export const aiQueue = () => getQueue<AiJob>(QUEUE_NAMES.ai);
 
 export async function enqueueInbound(job: InboundJob, opts?: JobsOptions) {
   return inboundQueue().add('inbound', job, opts);
@@ -80,6 +85,10 @@ export async function enqueueAttachment(job: AttachmentJob, opts?: JobsOptions) 
 
 export async function enqueueMaintenance(job: MaintenanceJob, opts?: JobsOptions) {
   return maintenanceQueue().add('maintenance', job, opts);
+}
+
+export async function enqueueAi(job: AiJob, opts?: JobsOptions) {
+  return aiQueue().add('ai', job, opts);
 }
 
 export { Queue };

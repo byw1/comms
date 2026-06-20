@@ -3,6 +3,7 @@
 import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { Sparkles } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   Select,
@@ -21,6 +22,7 @@ export function TicketPanel({
   conversation,
   agents,
   allTags,
+  ai,
 }: {
   conversation: {
     id: string;
@@ -34,6 +36,7 @@ export function TicketPanel({
   };
   agents: { id: string; name: string | null; email: string }[];
   allTags: { id: string; name: string; color: string }[];
+  ai?: { summary?: string; topic?: string; sentiment?: string } | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -61,6 +64,29 @@ export function TicketPanel({
           </div>
         </div>
       </section>
+
+      {ai?.summary && (
+        <>
+          <Separator />
+          <section className="space-y-1.5">
+            <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <Sparkles className="h-3 w-3" />
+              AI summary
+            </p>
+            <p className="text-sm">{ai.summary}</p>
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {ai.topic && (
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{ai.topic}</span>
+              )}
+              {ai.sentiment && (
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-xs capitalize text-muted-foreground">
+                  {ai.sentiment}
+                </span>
+              )}
+            </div>
+          </section>
+        </>
+      )}
 
       <Separator />
 

@@ -3,6 +3,7 @@ export * from './logger.js';
 export * from './crypto.js';
 export * from './redis.js';
 export * from './queue.js';
+export * from './ratelimit.js';
 export * from './realtime.js';
 export * from './storage.js';
 export * from './ids.js';

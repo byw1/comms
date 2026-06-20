@@ -13,6 +13,7 @@
   "dependencies": {
     "@auth/drizzle-adapter": "1.7.4",
     "@aws-sdk/client-s3": "^3.717.0",
+    "@comms/ai": "workspace:*",
     "@comms/core": "workspace:*",
     "@comms/db": "workspace:*",
     "@hookform/resolvers": "^3.10.0",

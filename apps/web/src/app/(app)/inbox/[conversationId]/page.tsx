@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { loadConfig } from '@comms/core';
 import { getConversation, getMessages, listAgents, listTags, listMacros } from '@/server/queries';
 import { MessageThread } from '@/components/inbox/message-thread';
 import { Composer } from '@/components/inbox/composer';
@@ -24,6 +25,8 @@ export default async function ConversationPage({
   ]);
 
   const contactName = conversation.contact?.displayName ?? conversation.title ?? 'Unknown';
+  const aiEnabled = loadConfig().aiEnabled;
+  const ai = (conversation.metadata as { ai?: { summary?: string; topic?: string; sentiment?: string } } | null)?.ai;
 
   return (
     <div className="flex h-full min-h-0 flex-1">
@@ -60,6 +63,7 @@ export default async function ConversationPage({
         <Composer
           conversationId={conversation.id}
           macros={macros.map((m) => ({ id: m.id, name: m.name, body: m.body }))}
+          aiEnabled={aiEnabled}
         />
       </div>
       <TicketPanel
@@ -75,6 +79,7 @@ export default async function ConversationPage({
         }}
         agents={agents.map((a) => ({ id: a.id, name: a.name, email: a.email }))}
         allTags={tags.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
+        ai={ai ? { summary: ai.summary, topic: ai.topic, sentiment: ai.sentiment } : null}
       />
     </div>
   );
