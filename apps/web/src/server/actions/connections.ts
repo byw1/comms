@@ -187,6 +187,25 @@ export async function reRegisterWebhook(
   }
 }
 
+export async function updateInboxSettings(
+  inboxId: string,
+  settings: {
+    autoAssign?: boolean;
+    assignStrategy?: 'round_robin' | 'least_busy';
+    markReadOnReply?: boolean;
+  },
+): Promise<{ ok: boolean }> {
+  await requireAdmin();
+  const inbox = await db.query.inboxes.findFirst({ where: eq(inboxes.id, inboxId) });
+  if (!inbox) return { ok: false };
+  await db
+    .update(inboxes)
+    .set({ settings: { ...inbox.settings, ...settings } })
+    .where(eq(inboxes.id, inboxId));
+  revalidatePath('/settings/inboxes');
+  return { ok: true };
+}
+
 export async function disconnect(connectionId: string): Promise<{ ok: boolean }> {
   await requireAdmin();
   const cfg = loadConfig();

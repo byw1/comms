@@ -10,6 +10,14 @@ export type RealtimeEvent =
   | { type: 'conversation.created'; conversationId: string; inboxId: string }
   | { type: 'conversation.updated'; conversationId: string; inboxId: string }
   | { type: 'typing'; conversationId: string; inboxId: string; isTyping: boolean }
+  | {
+      type: 'presence';
+      conversationId: string;
+      userId: string;
+      userName: string;
+      state: 'viewing' | 'typing' | 'left';
+    }
+  | { type: 'notification'; userId: string }
   | { type: 'connection.status'; connectionId: string; status: string };
 
 export const RT_CHANNEL = 'comms:rt';

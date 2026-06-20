@@ -16,6 +16,7 @@ export const inboxes = pgTable('inboxes', {
     .$type<{
       signature?: string;
       autoAssign?: boolean;
+      assignStrategy?: 'round_robin' | 'least_busy';
       markReadOnReply?: boolean;
       sendTypingIndicators?: boolean;
     }>()

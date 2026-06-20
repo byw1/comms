@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Send, Loader2, Zap, StickyNote } from 'lucide-react';
@@ -31,6 +31,20 @@ export function Composer({
   const [isNote, setIsNote] = useState(false);
   const [pending, start] = useTransition();
   const ref = useRef<HTMLTextAreaElement>(null);
+  const lastTypingPing = useRef(0);
+
+  // Broadcast a throttled "typing" presence ping so other agents see collisions.
+  useEffect(() => {
+    if (!body.trim()) return;
+    const now = Date.now();
+    if (now - lastTypingPing.current < 2000) return;
+    lastTypingPing.current = now;
+    fetch('/api/presence', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationId, state: 'typing' }),
+    }).catch(() => {});
+  }, [body, conversationId]);
 
   function submit() {
     const trimmed = body.trim();

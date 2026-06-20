@@ -19,6 +19,7 @@ import {
   logger,
 } from '@comms/core';
 import { isAiEnabled } from '@comms/ai';
+import { maybeAutoAssign } from './assign.js';
 
 const log = logger.child({ module: 'ingest' });
 
@@ -245,9 +246,12 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
     inboxId: conn.inboxId,
   });
 
-  // Auto-triage a brand-new conversation the moment a customer first writes in.
-  if (created && isInbound && isAiEnabled()) {
-    await enqueueAi({ type: 'triage', conversationId: conversation.id }).catch(() => {});
+  // For a brand-new conversation, auto-assign (if enabled) and auto-triage (if AI on).
+  if (created && isInbound) {
+    await maybeAutoAssign(conversation.id, conn.inboxId).catch(() => {});
+    if (isAiEnabled()) {
+      await enqueueAi({ type: 'triage', conversationId: conversation.id }).catch(() => {});
+    }
   }
 }
 

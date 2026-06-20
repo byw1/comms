@@ -1,6 +1,7 @@
 import { listInboxes } from '@/server/queries';
 import { ConnectBlueBubbles } from '@/components/settings/connect-bluebubbles';
 import { ConnectionCard } from '@/components/settings/connection-card';
+import { InboxSettings } from '@/components/settings/inbox-settings';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,7 @@ export default async function InboxesSettingsPage() {
                   </span>
                 )}
               </div>
+              <InboxSettings inboxId={inbox.id} settings={inbox.settings} />
               {inbox.connections.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No connection.</p>
               ) : (

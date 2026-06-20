@@ -29,15 +29,15 @@ trustworthy. Both are mostly backend and shippable without new infra.
   - ⬜ Per-recipient backoff + deliverability monitoring/alerts
   - ⬜ Liveness alerting when the Mac sleeps / tunnel rotates
 
-## Wave 2 — Multi-agent collaboration
+## Wave 2 — Multi-agent collaboration ✅ (core)
 
 What makes Comms enterprise rather than a personal bridge.
 
-- ⬜ Real-time presence ("Sarah is viewing / typing…") + collision warnings
+- ✅ Real-time presence ("Sarah is viewing / typing…") + collision warnings
+- ✅ @mentions in internal notes with notifications (+ notification bell)
+- ✅ Assignment rules engine (round-robin + least-busy auto-assignment)
 - ⬜ Co-drafting a single reply (shared draft)
-- ⬜ @mentions in internal notes with notifications
-- ⬜ Assignment rules engine (round-robin, load-balanced, skills, business hours)
-- ⬜ Escalation / handoff with context
+- ⬜ Skills-based / business-hours routing; escalation / handoff with context
 
 ## Wave 3 — Workflow & ticketing depth
 

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Inbox, Users, Settings, Hash } from 'lucide-react';
 import { Logo } from '@/components/brand';
 import { UserMenu } from '@/components/app/user-menu';
+import { NotificationsBell } from '@/components/app/notifications-bell';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
@@ -27,8 +28,9 @@ export function Sidebar({
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r bg-card">
-      <div className="flex h-14 items-center border-b px-4">
+      <div className="flex h-14 items-center justify-between border-b px-4">
         <Logo />
+        <NotificationsBell />
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">

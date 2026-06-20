@@ -1,0 +1,51 @@
+'use server';
+
+import { and, desc, eq, isNull } from '@comms/db';
+import { notifications } from '@comms/db';
+import { db } from '@/server/db';
+import { requireUser } from '@/lib/session';
+
+export interface NotificationItem {
+  id: string;
+  body: string;
+  conversationId: string | null;
+  read: boolean;
+  createdAt: Date;
+}
+
+export async function listNotifications(): Promise<{ items: NotificationItem[]; unread: number }> {
+  const user = await requireUser();
+  const rows = await db.query.notifications.findMany({
+    where: eq(notifications.userId, user.id),
+    orderBy: [desc(notifications.createdAt)],
+    limit: 30,
+  });
+  return {
+    items: rows.map((r) => ({
+      id: r.id,
+      body: r.body,
+      conversationId: r.conversationId,
+      read: Boolean(r.readAt),
+      createdAt: r.createdAt,
+    })),
+    unread: rows.filter((r) => !r.readAt).length,
+  };
+}
+
+export async function markNotificationRead(id: string): Promise<{ ok: true }> {
+  const user = await requireUser();
+  await db
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(and(eq(notifications.id, id), eq(notifications.userId, user.id)));
+  return { ok: true };
+}
+
+export async function markAllNotificationsRead(): Promise<{ ok: true }> {
+  const user = await requireUser();
+  await db
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(and(eq(notifications.userId, user.id), isNull(notifications.readAt)));
+  return { ok: true };
+}

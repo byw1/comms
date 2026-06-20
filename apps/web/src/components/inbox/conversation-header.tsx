@@ -7,6 +7,7 @@ import { Check, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { updateConversation } from '@/server/actions/inbox';
+import { PresenceBar } from '@/components/inbox/presence-bar';
 import { cn } from '@/lib/utils';
 
 const STATUS_STYLES: Record<string, string> = {
@@ -47,7 +48,8 @@ export function ConversationHeader({
           {status}
         </Badge>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
+        <PresenceBar conversationId={conversationId} />
         {status === 'closed' ? (
           <Button size="sm" variant="outline" onClick={() => setStatus('open')} disabled={pending}>
             {pending ? (

@@ -2,13 +2,48 @@
 
 import { revalidatePath } from 'next/cache';
 import { eq, and } from '@comms/db';
-import { conversations, messages, conversationTags } from '@comms/db';
+import { conversations, messages, conversationTags, users, notifications } from '@comms/db';
 import { newTempGuid, enqueueOutbound, publishEvent } from '@comms/core';
 import { db } from '@/server/db';
 import { requireUser } from '@/lib/session';
 import { getConnectionForInbox } from '@/server/queries';
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
+
+/** Parse @mentions in an internal note and notify matched teammates. */
+async function notifyMentions(
+  conversationId: string,
+  body: string,
+  authorUserId: string,
+  authorName: string,
+) {
+  const tokens = Array.from(body.matchAll(/@([\w.+-]+)/g)).map((m) => m[1]!.toLowerCase());
+  if (tokens.length === 0) return;
+
+  const all = await db.query.users.findMany({
+    where: eq(users.status, 'active'),
+    columns: { id: true, name: true, email: true },
+  });
+  const matched = new Set<string>();
+  for (const u of all) {
+    if (u.id === authorUserId) continue;
+    const nameKey = (u.name ?? '').toLowerCase().replace(/\s+/g, '');
+    const emailLocal = u.email.split('@')[0]!.toLowerCase();
+    if (tokens.some((t) => t === nameKey || t === emailLocal || t === u.email.toLowerCase())) {
+      matched.add(u.id);
+    }
+  }
+  for (const userId of matched) {
+    await db.insert(notifications).values({
+      userId,
+      type: 'mention',
+      conversationId,
+      actorUserId: authorUserId,
+      body: `${authorName} mentioned you in a note`,
+    });
+    await publishEvent({ type: 'notification', userId });
+  }
+}
 
 /** Send a reply (queued for the worker) or save an internal note. */
 export async function sendMessage(input: {
@@ -65,6 +100,10 @@ export async function sendMessage(input: {
       conversationId: conv.id,
       connectionId: connection.id,
     });
+  }
+
+  if (input.isPrivateNote) {
+    await notifyMentions(conv.id, body, user.id, user.name ?? 'A teammate');
   }
 
   await publishEvent({
