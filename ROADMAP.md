@@ -50,11 +50,12 @@ What makes Comms enterprise rather than a personal bridge.
 - ⬜ Saved views / custom inboxes; merge/split/link; cross-handle entity resolution
 - ⬜ Full business-hours-aware SLA windows
 
-## Wave 4 — Performance & UX excellence
+## Wave 4 — Performance & UX excellence 🚧
 
+- ✅ Command palette (⌘K) + keyboard navigation (search + jump-to)
+- ✅ Full-text search across all messages, contacts, and conversation titles
+- ⬜ Semantic search (pgvector embeddings, kept fresh by the worker)
 - ⬜ Linear-style local sync engine (IndexedDB store + optimistic mutations + delta sync)
-- ⬜ Full-text + semantic search (Postgres FTS + pgvector / Meilisearch)
-- ⬜ Command palette (⌘K) + keyboard-first navigation
 - ⬜ Native mobile app (reply on the go)
 - ⬜ Rich iMessage parity from the UI: tapbacks, typing, edit/unsend, effects, scheduled send
 

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Inbox, Users, Settings, Hash } from 'lucide-react';
+import { Inbox, Users, Settings, Hash, Search } from 'lucide-react';
 import { Logo } from '@/components/brand';
 import { UserMenu } from '@/components/app/user-menu';
 import { NotificationsBell } from '@/components/app/notifications-bell';
@@ -30,7 +30,18 @@ export function Sidebar({
     <aside className="flex w-60 shrink-0 flex-col border-r bg-card">
       <div className="flex h-14 items-center justify-between border-b px-4">
         <Logo />
-        <NotificationsBell />
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event('comms:open-command'))}
+            className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            aria-label="Search (⌘K)"
+            title="Search (⌘K)"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+          <NotificationsBell />
+        </div>
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
