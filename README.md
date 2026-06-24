@@ -8,6 +8,12 @@ Think Beeper for enterprise, with a help desk built in. Share an iMessage number
 assign conversations as tickets, use macros, and reply together — all from a clean, fast UI you host
 yourself.
 
+![License: MIT](https://img.shields.io/badge/license-MIT-black)
+![Next.js](https://img.shields.io/badge/Next.js-15-black)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-black)
+![Self-hostable](https://img.shields.io/badge/self--hostable-Railway-black)
+![PRs welcome](https://img.shields.io/badge/PRs-welcome-black)
+
 </div>
 
 ---
