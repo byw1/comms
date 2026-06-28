@@ -1,4 +1,5 @@
 export { getDb, closeDb, schema, type Database } from './client.js';
+export { ensureAppSecret } from './secret.js';
 export * as tables from './schema/index.js';
 export * from './schema/index.js';
 

@@ -43,19 +43,20 @@ iMessage is the first channel. The architecture is channel-agnostic, with WhatsA
 
 You'll create **one Railway project with four services** — Postgres, Redis, a **web**
 service, and a **worker** service — all from this one repo. It takes about 10 minutes,
-and you only ever type **one** value yourself (and even that is auto-generated).
+and you **don't type a single value yourself**.
 
-> **The whole config in one glance — just 3 variables, set the same on both the web and worker services:**
+> **The whole config in one glance — just 2 variables, the same on both the web and worker services:**
 >
 > ```bash
-> APP_SECRET=${{ shared.APP_SECRET }}
 > DATABASE_URL=${{ Postgres.DATABASE_URL }}
 > REDIS_URL=${{ Redis.REDIS_URL }}
 > ```
 >
-> Everything else (your public URL, running migrations, etc.) is automatic. Email, AI,
-> file attachments, and OAuth are **optional** and added later from inside the app or as
-> extra variables — they are never required to get started.
+> Both are one-click *references*, not values you invent. Everything else is automatic:
+> Comms generates and stores its own app secret on first boot, derives its public URL,
+> and runs database migrations for you. Email, AI, file attachments, and OAuth are
+> **optional** and added later from inside the app or as extra variables — never required
+> to get started.
 
 ### 1. Create the project from this repo
 
@@ -84,23 +85,14 @@ apps/web/railway.json
 
 This tells Railway to build the Docker image, run database migrations automatically before each deploy, start the web server, and health-check `/api/health`.
 
-**b. Add a shared `APP_SECRET` (do this once for the whole project).** Project **Settings → Shared Variables** → add:
-
-| Name | Value |
-| --- | --- |
-| `APP_SECRET` | `${{ secret(48) }}` |
-
-Railway generates a strong random secret for you. It is shared so the web and worker services use the **same** secret (required — it encrypts your integration credentials).
-
-**c. Set the web service variables.** On the web service → **Variables** → **Raw Editor** → paste exactly:
+**b. Set the web service variables.** On the web service → **Variables** → **Raw Editor** → paste exactly:
 
 ```bash
-APP_SECRET=${{ shared.APP_SECRET }}
 DATABASE_URL=${{ Postgres.DATABASE_URL }}
 REDIS_URL=${{ Redis.REDIS_URL }}
 ```
 
-**d. Give it a public URL.** Settings → **Networking** → **Generate Domain**.
+**c. Give it a public URL.** Settings → **Networking** → **Generate Domain**.
 
 ### 5. Add the worker service
 
@@ -111,10 +103,9 @@ REDIS_URL=${{ Redis.REDIS_URL }}
 apps/worker/railway.json
 ```
 
-- **Variables** → **Raw Editor** → paste the **same three lines** as the web service:
+- **Variables** → **Raw Editor** → paste the **same two lines** as the web service:
 
 ```bash
-APP_SECRET=${{ shared.APP_SECRET }}
 DATABASE_URL=${{ Postgres.DATABASE_URL }}
 REDIS_URL=${{ Redis.REDIS_URL }}
 ```
@@ -133,10 +124,11 @@ That's it — you're live. 🎉
 
 | Variable | Required? | What to set | Why |
 | --- | --- | --- | --- |
-| `APP_SECRET` | ✅ Yes | `${{ secret(48) }}` (as a **shared** variable) | Signs sessions and encrypts integration credentials. Must be identical on web + worker. |
 | `DATABASE_URL` | ✅ Yes | `${{ Postgres.DATABASE_URL }}` | Connects to Postgres. A reference — no value to type. |
 | `REDIS_URL` | ✅ Yes | `${{ Redis.REDIS_URL }}` | Queues + realtime. A reference — no value to type. |
+| *(app secret)* | ⚙️ Auto | — | Generated and stored in the database on first boot. Nothing to set. |
 | *(public URL)* | ⚙️ Auto | — | Derived from Railway's generated domain. Nothing to set. |
+| `APP_SECRET` | ⬜ Optional | `${{ secret(48) }}` (a **shared** variable) | Override the auto-generated secret. Recommended for production hardening — keeps the encryption key out of the database. If you set it, set it on **both** services with the same value. |
 | `ANTHROPIC_API_KEY` | ⬜ Optional | your Claude API key | Enables AI summaries, draft replies, and auto-triage. |
 | `S3_*` | ⬜ Optional | from a Storage Bucket / S3 | Enables file attachments (see below). |
 | `SMTP_*` | ⬜ Optional | your mail provider | Enables magic-link sign-in, invites, notifications. |

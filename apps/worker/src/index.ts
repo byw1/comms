@@ -7,7 +7,7 @@ import {
   enqueueMaintenance,
   logger,
 } from '@comms/core';
-import { getDb, closeDb } from '@comms/db';
+import { getDb, closeDb, ensureAppSecret } from '@comms/db';
 import { channelConnections } from '@comms/db';
 import { processInbound } from './processors/inbound.js';
 import { processOutbound } from './processors/outbound.js';
@@ -18,7 +18,12 @@ import { processAiJob } from './processors/ai.js';
 const log = logger.child({ service: 'worker' });
 
 async function main() {
-  loadConfig(true); // fail fast if DB/Redis/secret are missing
+  // Self-provision the app secret from the DB when not provided, so the worker
+  // and web share the same key with zero required config.
+  if (!process.env.APP_SECRET && !process.env.AUTH_SECRET && process.env.DATABASE_URL) {
+    process.env.APP_SECRET = await ensureAppSecret();
+  }
+  loadConfig(true); // fail fast if DB/Redis are missing
   getDb(); // warm the pool
 
   const workers: Worker[] = [

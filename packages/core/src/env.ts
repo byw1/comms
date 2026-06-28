@@ -94,14 +94,17 @@ export function loadConfig(requireRuntime = false): AppConfig {
   const authSecret = env.AUTH_SECRET ?? env.APP_SECRET;
 
   if (requireRuntime) {
+    // APP_SECRET is intentionally NOT required — when unset, the app generates and
+    // persists one in the database on first boot (see @comms/db ensureAppSecret),
+    // which sets process.env.APP_SECRET before this runs. Only the datastores are
+    // truly required, and on Railway both are one-click references.
     const missing: string[] = [];
     if (!env.DATABASE_URL) missing.push('DATABASE_URL');
     if (!env.REDIS_URL) missing.push('REDIS_URL');
-    if (!appSecret) missing.push('APP_SECRET (or AUTH_SECRET)');
     if (missing.length) {
       throw new Error(
         `Missing required runtime configuration: ${missing.join(', ')}.\n` +
-          'On Railway these are wired automatically (Postgres/Redis references + ${{ secret() }}).',
+          'On Railway these are wired automatically (Postgres/Redis service references).',
       );
     }
   }
