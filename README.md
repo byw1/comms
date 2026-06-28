@@ -39,31 +39,132 @@ iMessage is the first channel. The architecture is channel-agnostic, with WhatsA
 - 🎨 **Clean, enterprise UI** — black & white, shadcn/ui + Framer Motion
 - 🚀 **One-click Railway deploy** — almost zero environment variables to set
 
-## Deploy on Railway
+## Deploy to Railway (step by step)
 
-Comms is designed to deploy as a Railway template with the **minimum possible configuration**:
+You'll create **one Railway project with four services** — Postgres, Redis, a **web**
+service, and a **worker** service — all from this one repo. It takes about 10 minutes,
+and you only ever type **one** value yourself (and even that is auto-generated).
 
-| Concern | How it's handled |
+> **The whole config in one glance — just 3 variables, set the same on both the web and worker services:**
+>
+> ```bash
+> APP_SECRET=${{ shared.APP_SECRET }}
+> DATABASE_URL=${{ Postgres.DATABASE_URL }}
+> REDIS_URL=${{ Redis.REDIS_URL }}
+> ```
+>
+> Everything else (your public URL, running migrations, etc.) is automatic. Email, AI,
+> file attachments, and OAuth are **optional** and added later from inside the app or as
+> extra variables — they are never required to get started.
+
+### 1. Create the project from this repo
+
+- Go to [railway.com](https://railway.com) → **New Project** → **Deploy from GitHub repo** → pick your fork of `comms`.
+- Railway creates one service from the repo. We'll make this the **web** service in step 4.
+
+### 2. Add Postgres
+
+- In the project, click **New** → **Database** → **Add PostgreSQL**. Leave it named **`Postgres`**.
+
+### 3. Add Redis
+
+- Click **New** → **Database** → **Add Redis**. Leave it named **`Redis`**.
+
+> Keep the default names `Postgres` and `Redis` — the variable references below use them. If you rename a database, update the references to match.
+
+### 4. Configure the web service
+
+Open the repo service from step 1, then:
+
+**a. Point it at the web config.** Settings → **Config-as-code / Railway Config File** → set the path to:
+
+```
+apps/web/railway.json
+```
+
+This tells Railway to build the Docker image, run database migrations automatically before each deploy, start the web server, and health-check `/api/health`.
+
+**b. Add a shared `APP_SECRET` (do this once for the whole project).** Project **Settings → Shared Variables** → add:
+
+| Name | Value |
 | --- | --- |
-| Postgres | One-click managed service; `DATABASE_URL` wired by reference |
-| Redis | One-click managed service; `REDIS_URL` wired by reference |
-| Object storage | Railway **Storage Bucket** (native, S3-compatible); `S3_*` wired by reference |
-| App secret | Auto-generated with `${{ secret() }}` |
-| Public URL | Derived from `RAILWAY_PUBLIC_DOMAIN` |
-| Migrations | Run automatically before each deploy (`preDeployCommand`) |
+| `APP_SECRET` | `${{ secret(48) }}` |
 
-The template provisions four services from this one repo/image:
+Railway generates a strong random secret for you. It is shared so the web and worker services use the **same** secret (required — it encrypts your integration credentials).
 
-- **web** — the Next.js app (public)
-- **worker** — the background processor (BullMQ; no public port)
-- **Postgres**
-- **Redis**
+**c. Set the web service variables.** On the web service → **Variables** → **Raw Editor** → paste exactly:
 
-…plus a **Storage Bucket** for attachments. After deploying, you only ever need to open the app, run
-the first-run setup wizard, and connect your BlueBubbles server from **Settings → Inboxes**.
+```bash
+APP_SECRET=${{ shared.APP_SECRET }}
+DATABASE_URL=${{ Postgres.DATABASE_URL }}
+REDIS_URL=${{ Redis.REDIS_URL }}
+```
 
-> Email (magic-link/invites) and OAuth/SSO are fully optional and configured later via environment
-> variables — they are never required to get started.
+**d. Give it a public URL.** Settings → **Networking** → **Generate Domain**.
+
+### 5. Add the worker service
+
+- Click **New** → **GitHub Repo** → pick the **same** `comms` repo again.
+- Settings → **Config File** → set the path to:
+
+```
+apps/worker/railway.json
+```
+
+- **Variables** → **Raw Editor** → paste the **same three lines** as the web service:
+
+```bash
+APP_SECRET=${{ shared.APP_SECRET }}
+DATABASE_URL=${{ Postgres.DATABASE_URL }}
+REDIS_URL=${{ Redis.REDIS_URL }}
+```
+
+- The worker has **no public port** — do **not** generate a domain for it.
+
+### 6. Deploy & finish setup
+
+- Railway builds and deploys all four services. The web service runs migrations automatically on its first deploy.
+- Open the web service's domain (e.g. `https://your-app.up.railway.app`). You'll see the **first-run setup wizard** — create your admin account.
+- Go to **Settings → Inboxes → Connect BlueBubbles** and paste your BlueBubbles server URL + password (see the next section).
+
+That's it — you're live. 🎉
+
+### The minimal variables, explained
+
+| Variable | Required? | What to set | Why |
+| --- | --- | --- | --- |
+| `APP_SECRET` | ✅ Yes | `${{ secret(48) }}` (as a **shared** variable) | Signs sessions and encrypts integration credentials. Must be identical on web + worker. |
+| `DATABASE_URL` | ✅ Yes | `${{ Postgres.DATABASE_URL }}` | Connects to Postgres. A reference — no value to type. |
+| `REDIS_URL` | ✅ Yes | `${{ Redis.REDIS_URL }}` | Queues + realtime. A reference — no value to type. |
+| *(public URL)* | ⚙️ Auto | — | Derived from Railway's generated domain. Nothing to set. |
+| `ANTHROPIC_API_KEY` | ⬜ Optional | your Claude API key | Enables AI summaries, draft replies, and auto-triage. |
+| `S3_*` | ⬜ Optional | from a Storage Bucket / S3 | Enables file attachments (see below). |
+| `SMTP_*` | ⬜ Optional | your mail provider | Enables magic-link sign-in, invites, notifications. |
+| `GOOGLE_*` / `GITHUB_*` | ⬜ Optional | OAuth app creds | Enables Google / GitHub sign-in. |
+
+See [`.env.example`](./.env.example) for the full list with descriptions.
+
+### Optional: file attachments
+
+Attachments need S3-compatible storage. The easiest on Railway is a native **Storage Bucket**
+(**New → Storage Bucket**). Then add these to **both** the web and worker services, mapping the
+bucket's variables:
+
+```bash
+S3_ENDPOINT=${{ Bucket.ENDPOINT }}
+S3_BUCKET=${{ Bucket.BUCKET_NAME }}
+S3_ACCESS_KEY_ID=${{ Bucket.ACCESS_KEY_ID }}
+S3_SECRET_ACCESS_KEY=${{ Bucket.SECRET_ACCESS_KEY }}
+S3_REGION=auto
+```
+
+(Exact variable names depend on the bucket plugin — open the bucket's **Variables** tab to confirm. Any S3-compatible store works too: Cloudflare R2, Backblaze B2, AWS S3.)
+
+### Troubleshooting
+
+- **Web crashes on boot with a DB/Redis error** → the variable references didn't resolve. Confirm `Postgres` and `Redis` are the exact service names, and that the three variables are set on the service.
+- **Webhook didn't register when connecting BlueBubbles** → your app needs a public URL BlueBubbles can reach. Make sure you generated a domain (step 4d); then in **Settings → Inboxes** click **Re-register webhook**.
+- **Messages don't arrive / send** → check the **worker** service logs; it must be running with the same three variables as web.
 
 ## How the iMessage bridge works
 
