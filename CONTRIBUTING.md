@@ -22,7 +22,7 @@ Prerequisites: Node 22+, pnpm 10+, and a local Postgres + Redis.
 
 ```bash
 pnpm install
-cp .env.example .env            # set DATABASE_URL, REDIS_URL, APP_SECRET
+cp .env.example .env            # set DATABASE_URL and REDIS_URL (that's all)
 
 pnpm --filter @comms/db build
 pnpm db:generate                # only if you changed the schema

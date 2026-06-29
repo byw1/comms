@@ -201,7 +201,7 @@ Prerequisites: Node 22+, pnpm 10+, and a local Postgres + Redis (or Docker).
 
 ```bash
 pnpm install
-cp .env.example .env            # set DATABASE_URL, REDIS_URL, APP_SECRET
+cp .env.example .env            # set DATABASE_URL and REDIS_URL (that's all)
 
 pnpm --filter @comms/db build   # build the db package
 pnpm db:generate                # generate the SQL migration from the schema

@@ -1,11 +1,11 @@
 import { z } from 'zod';
 
 /**
- * Centralized, validated configuration. The design goal is "almost zero required
- * env vars on Railway": DATABASE_URL / REDIS_URL come from referenced services,
- * APP_SECRET is auto-generated via ${{ secret() }}, and the public URL is derived
- * from RAILWAY_PUBLIC_DOMAIN. Everything else (SMTP, OAuth, S3) is optional and
- * can be configured later from the in-app settings.
+ * Centralized, validated configuration. The design goal is "only two required
+ * env vars": DATABASE_URL / REDIS_URL come from referenced services. The app
+ * secret is generated and stored in the database on first boot (it is NOT a
+ * required var), and the public URL is derived from RAILWAY_PUBLIC_DOMAIN.
+ * Everything else (SMTP, OAuth, S3, AI) is optional and configured later.
  */
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
