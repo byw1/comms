@@ -37,7 +37,8 @@ async function resolveContact(address: string, displayName?: string | null): Pro
 
   const [contact] = await db
     .insert(contacts)
-    .values({ displayName: displayName ?? norm.raw })
+    // Fall back to the address when the chat has no (or an empty) display name.
+    .values({ displayName: displayName?.trim() || norm.raw })
     .returning({ id: contacts.id });
   const contactId = contact!.id;
 

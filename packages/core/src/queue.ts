@@ -1,12 +1,13 @@
 import { Queue, type JobsOptions } from 'bullmq';
 import { createRedis } from './redis.js';
 
+// NOTE: BullMQ forbids ':' in queue names (it's the Redis key separator), so use hyphens.
 export const QUEUE_NAMES = {
-  inbound: 'comms:inbound',
-  outbound: 'comms:outbound',
-  attachments: 'comms:attachments',
-  maintenance: 'comms:maintenance',
-  ai: 'comms:ai',
+  inbound: 'comms-inbound',
+  outbound: 'comms-outbound',
+  attachments: 'comms-attachments',
+  maintenance: 'comms-maintenance',
+  ai: 'comms-ai',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
