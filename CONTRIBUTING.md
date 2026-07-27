@@ -18,6 +18,22 @@ packages/
 
 ## Getting started
 
+### Fastest: run the whole stack in Docker
+
+Boots Postgres + Redis + MinIO + web + worker with one command:
+
+```bash
+docker compose up --build      # then open http://localhost:3000
+```
+
+Verify a fresh build boots end-to-end (used in review):
+
+```bash
+./scripts/smoke-test.sh
+```
+
+### Or run it locally with pnpm
+
 Prerequisites: Node 22+, pnpm 10+, and a local Postgres + Redis.
 
 ```bash
@@ -32,8 +48,11 @@ pnpm dev                        # web on :3000 + worker
 
 ## Before you open a PR
 
+CI runs all of these on every PR — run them locally first:
+
 - `pnpm build` — the whole monorepo must build
 - `pnpm typecheck` — must pass (strict TypeScript, `noUncheckedIndexedAccess`)
+- `pnpm test` — unit tests must pass
 - `pnpm format` — Prettier
 - If you changed `packages/db/src/schema`, run `pnpm db:generate` and commit the
   generated migration in `packages/db/migrations`.

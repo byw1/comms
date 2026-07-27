@@ -8,6 +8,21 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 
 ---
 
+## Tier 1 — Make it real (engineering & ops) 🚧
+
+Turning breadth into something trustworthy — this cuts across all waves.
+
+- ✅ Vitest unit suite for correctness-critical primitives (credential crypto,
+  handle normalization, reaction mapping, temp-guid)
+- ✅ One-command local stack (`docker compose up`) — Postgres + Redis + MinIO + web + worker
+- ✅ Boot smoke test (`scripts/smoke-test.sh`)
+- ✅ GitHub Actions CI (build + typecheck + test + Docker image build)
+- ⬜ Integration tests for the ingest pipeline (echo reconciliation, automations, SLA) against a Postgres service
+- ⬜ Playwright end-to-end (setup wizard → connect → reply)
+- ⬜ Observability: connection health / queue depth / send-failure dashboard
+
+---
+
 ## Wave 1 — AI-native + reliable (in progress)
 
 The two headline bets: make Comms AI-native, and make the iMessage bridge

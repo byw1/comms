@@ -1,4 +1,4 @@
-import { nanoid } from 'nanoid';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Generate a unique tempGuid for an outbound send. BlueBubbles echoes this back
@@ -6,5 +6,5 @@ import { nanoid } from 'nanoid';
  * who sent it (critical for multi-agent shared inboxes).
  */
 export function newTempGuid(): string {
-  return `comms-${nanoid()}`;
+  return `comms-${randomUUID()}`;
 }

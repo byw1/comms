@@ -37,6 +37,8 @@
     "start:worker": "pnpm --filter @comms/worker start",
     "lint": "pnpm -r --no-bail lint",
     "typecheck": "pnpm -r --no-bail typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "db:generate": "pnpm --filter @comms/db generate",
@@ -46,7 +48,8 @@
   },
   "devDependencies": {
     "prettier": "^3.4.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.10"
   },
   "pnpm": {
     "overrides": {

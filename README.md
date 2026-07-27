@@ -209,7 +209,13 @@ packages/
 
 ## Local development
 
-Prerequisites: Node 22+, pnpm 10+, and a local Postgres + Redis (or Docker).
+The fastest way — the whole stack (Postgres + Redis + MinIO + web + worker) in one command:
+
+```bash
+docker compose up --build       # then open http://localhost:3000
+```
+
+Or run it with pnpm. Prerequisites: Node 22+, pnpm 10+, and a local Postgres + Redis.
 
 ```bash
 pnpm install
@@ -234,6 +240,8 @@ Open http://localhost:3000 and complete the setup wizard to create your admin ac
 | `pnpm db:migrate` | Apply pending migrations |
 | `pnpm db:studio` | Open Drizzle Studio |
 | `pnpm typecheck` | Type-check the whole repo |
+| `pnpm test` | Run the unit test suite (Vitest) |
+| `./scripts/smoke-test.sh` | Boot the full Docker stack and verify it comes up healthy |
 
 ## Roadmap
 
