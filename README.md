@@ -58,6 +58,18 @@ and you **don't type a single value yourself**.
 > **optional** and added later from inside the app or as extra variables — never required
 > to get started.
 
+### Before you begin
+
+You'll need:
+
+- A free [Railway](https://railway.com) account (sign in with GitHub).
+- A **fork** of this repo on your own GitHub account (click **Fork** at the top of this page).
+- A Mac signed into iMessage running [BlueBubbles](https://bluebubbles.app) — this is what
+  connects Comms to iMessage. You can set this up after deploying (see
+  [How the iMessage bridge works](#how-the-imessage-bridge-works)).
+
+Nothing to install on your own computer — the whole app runs on Railway.
+
 ### 1. Create the project from this repo
 
 - Go to [railway.com](https://railway.com) → **New Project** → **Deploy from GitHub repo** → pick your fork of `comms`.
