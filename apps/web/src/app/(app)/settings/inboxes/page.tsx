@@ -14,10 +14,11 @@ export default async function InboxesSettingsPage() {
         <div>
           <h2 className="text-lg font-semibold">Inboxes & Channels</h2>
           <p className="text-sm text-muted-foreground">
-            Connect the messaging channels your team shares.
+            Connect one or more iMessage numbers. Each number becomes its own channel you can
+            filter by in the inbox.
           </p>
         </div>
-        <ConnectBlueBubbles />
+        <ConnectBlueBubbles hasExisting={inboxes.length > 0} />
       </div>
 
       {inboxes.length === 0 ? (

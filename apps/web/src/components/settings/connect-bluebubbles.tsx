@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { connectBlueBubbles } from '@/server/actions/connections';
 
-export function ConnectBlueBubbles() {
+export function ConnectBlueBubbles({ hasExisting = false }: { hasExisting?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
@@ -53,22 +53,34 @@ export function ConnectBlueBubbles() {
       <DialogTrigger asChild>
         <Button>
           <Plus className="mr-1.5 h-4 w-4" />
-          Connect BlueBubbles
+          {hasExisting ? 'Connect another number' : 'Connect BlueBubbles'}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>Connect a BlueBubbles server</DialogTitle>
+            <DialogTitle>
+              {hasExisting ? 'Connect another number' : 'Connect a BlueBubbles server'}
+            </DialogTitle>
             <DialogDescription>
-              Enter the URL and password of your BlueBubbles server (running on your Mac). Comms
-              will verify the connection and register a webhook automatically.
+              Enter the URL and password of the BlueBubbles server for this number (running on the
+              Mac signed in to that Apple ID). Comms will verify the connection and register a
+              webhook automatically.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="name">Inbox name</Label>
-              <Input id="name" value={form.name} onChange={update('name')} placeholder="iMessage" />
+              <Input
+                id="name"
+                value={form.name}
+                onChange={update('name')}
+                placeholder={hasExisting ? 'Support · +1 555…' : 'iMessage'}
+              />
+              <p className="text-xs text-muted-foreground">
+                Give each number a distinct name (e.g. the team or phone number) so you can tell
+                channels apart in the inbox.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="serverUrl">Server URL</Label>

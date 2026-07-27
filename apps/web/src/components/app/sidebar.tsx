@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Inbox, Users, Settings, Hash, Search } from 'lucide-react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { Inbox, Users, Settings, Hash, Search, Plus } from 'lucide-react';
 import { Logo } from '@/components/brand';
 import { UserMenu } from '@/components/app/user-menu';
 import { NotificationsBell } from '@/components/app/notifications-bell';
@@ -14,14 +14,19 @@ type NavItem = { href: string; label: string; icon: React.ElementType; count?: n
 export function Sidebar({
   user,
   counts,
+  inboxes,
 }: {
   user: { name?: string | null; email?: string | null; image?: string | null };
   counts: { open: number; mine: number; unassigned: number; closed: number };
+  inboxes: { id: string; name: string; color: string; connected: boolean }[];
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeInbox = searchParams.get('inbox');
+  const onInbox = pathname === '/inbox' || pathname.startsWith('/inbox/');
 
   const nav: NavItem[] = [
-    { href: '/inbox', label: 'Inbox', icon: Inbox, count: counts.open },
+    { href: '/inbox', label: 'All conversations', icon: Inbox, count: counts.open },
     { href: '/inbox?assignee=me', label: 'Assigned to me', icon: Users, count: counts.mine },
     { href: '/inbox?assignee=unassigned', label: 'Unassigned', icon: Hash, count: counts.unassigned },
   ];
@@ -49,7 +54,10 @@ export function Sidebar({
           Conversations
         </p>
         {nav.map((item) => {
-          const active = pathname === item.href.split('?')[0] && !item.href.includes('?');
+          const isAll = item.href === '/inbox';
+          const active = isAll
+            ? onInbox && !activeInbox && !searchParams.get('assignee')
+            : pathname === '/inbox' && searchParams.toString() === item.href.split('?')[1];
           const Icon = item.icon;
           return (
             <Link
@@ -72,6 +80,48 @@ export function Sidebar({
             </Link>
           );
         })}
+
+        {/* Per-number channels — filter the inbox by a specific iMessage number. */}
+        <div className="pt-4">
+          <p className="flex items-center justify-between px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Channels
+            <Link href="/settings/inboxes" title="Connect a number" className="hover:text-foreground">
+              <Plus className="h-3.5 w-3.5" />
+            </Link>
+          </p>
+          {inboxes.length === 0 ? (
+            <Link
+              href="/settings/inboxes"
+              className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+              Connect a number
+            </Link>
+          ) : (
+            inboxes.map((i) => {
+              const active = onInbox && activeInbox === i.id;
+              return (
+                <Link
+                  key={i.id}
+                  href={`/inbox?inbox=${i.id}`}
+                  className={cn(
+                    'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
+                    active
+                      ? 'bg-secondary font-medium text-secondary-foreground'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                  )}
+                >
+                  <span
+                    className={cn('h-2.5 w-2.5 shrink-0 rounded-full', !i.connected && 'opacity-40')}
+                    style={{ backgroundColor: i.color }}
+                    title={i.connected ? 'Connected' : 'Not connected'}
+                  />
+                  <span className="flex-1 truncate">{i.name}</span>
+                </Link>
+              );
+            })
+          )}
+        </div>
 
         <div className="pt-4">
           <Link

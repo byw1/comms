@@ -24,10 +24,13 @@ const PRIORITY_COLOR: Record<string, string> = {
 export function ConversationListPane({
   conversations,
   currentUserId,
+  showChannels = false,
 }: {
   conversations: ConversationListItem[];
   currentUserId: string;
   currentUserName: string;
+  /** When multiple numbers are connected, show which inbox each conversation belongs to. */
+  showChannels?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -62,10 +65,12 @@ export function ConversationListPane({
 
   const assignee = searchParams.get('assignee');
   const statusFilter = searchParams.get('status') ?? 'active';
+  const inboxFilter = searchParams.get('inbox');
   const activeId = pathname.startsWith('/inbox/') ? pathname.split('/inbox/')[1] : null;
 
   const filtered = useMemo(() => {
     return conversations.filter((c) => {
+      if (inboxFilter && c.inboxId !== inboxFilter) return false;
       if (assignee === 'me' && c.assigneeId !== currentUserId) return false;
       if (assignee === 'unassigned' && c.assigneeId) return false;
       if (statusFilter === 'active' && c.status === 'closed') return false;
@@ -79,7 +84,7 @@ export function ConversationListPane({
       }
       return true;
     });
-  }, [conversations, assignee, statusFilter, query, currentUserId]);
+  }, [conversations, assignee, statusFilter, inboxFilter, query, currentUserId]);
 
   const tabs = [
     { label: 'Active', href: '/inbox' },
@@ -210,6 +215,19 @@ export function ConversationListPane({
                     {c.lastMessagePreview || 'No messages yet'}
                   </p>
                   <div className="mt-1 flex items-center gap-1.5">
+                    {showChannels && c.inbox && (
+                      <span
+                        className="inline-flex h-4 items-center gap-1 rounded-full px-1.5 text-[10px]"
+                        style={{ backgroundColor: `${c.inbox.color}20`, color: c.inbox.color }}
+                        title={`Number: ${c.inbox.name}`}
+                      >
+                        <span
+                          className="h-1.5 w-1.5 rounded-full"
+                          style={{ backgroundColor: c.inbox.color }}
+                        />
+                        {c.inbox.name}
+                      </span>
+                    )}
                     {c.unreadCount > 0 && (
                       <Badge className="h-4 px-1.5 text-[10px]">{c.unreadCount}</Badge>
                     )}
