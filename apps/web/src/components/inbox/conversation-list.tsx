@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Search, Check, Loader2, Inbox as InboxIcon, X } from 'lucide-react';
+import { Search, Check, Loader2, Inbox as InboxIcon, X, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { AnimatePresence, motion } from '@/components/ui/motion';
 import { bulkUpdateConversations } from '@/server/actions/inbox';
+import { setVisibleConversationIds } from '@/lib/inbox-nav';
 import { cn, initials } from '@/lib/utils';
 import { listTime, relativeTime } from '@/lib/format';
 import type { ConversationListItem } from '@/server/queries';
@@ -88,11 +89,20 @@ export function ConversationListPane({
     });
   }, [conversations, assignee, statusFilter, inboxFilter, query, currentUserId]);
 
+  // Publish the visible ordering for the global j/k keyboard navigation.
+  useEffect(() => {
+    setVisibleConversationIds(filtered.map((c) => c.id));
+  }, [filtered]);
+
   const tabs = [
     { label: 'Active', href: '/inbox', key: 'active' },
     { label: 'Mine', href: '/inbox?assignee=me', key: 'mine' },
     { label: 'Closed', href: '/inbox?status=closed', key: 'closed' },
   ];
+
+  // A truly empty Active queue (no filters, no search) is an achievement.
+  const inboxZero =
+    filtered.length === 0 && !query && !assignee && statusFilter === 'active' && !inboxFilter;
 
   return (
     <div className="flex w-[344px] shrink-0 flex-col border-r bg-surface">
@@ -190,7 +200,23 @@ export function ConversationListPane({
       </AnimatePresence>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {filtered.length === 0 ? (
+        {inboxZero ? (
+          <div className="flex animate-slide-up flex-col items-center justify-center gap-3.5 px-6 py-20 text-center">
+            <div className="relative">
+              <div className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-brand to-brand/70 text-white shadow-brand">
+                <Check className="h-6 w-6" strokeWidth={2.5} />
+              </div>
+              <Sparkles className="absolute -right-2 -top-2 h-4 w-4 text-warning" />
+            </div>
+            <div>
+              <p className="text-[15px] font-semibold tracking-[-0.01em]">Inbox Zero</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Every conversation handled. Nicely done — new messages will appear here the moment
+                they arrive.
+              </p>
+            </div>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
             <div className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-muted-foreground">
               <InboxIcon className="h-5 w-5" />

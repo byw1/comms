@@ -51,6 +51,11 @@ const schema = z.object({
   SEND_HOURLY_CAP: z.coerce.number().default(50),
   SEND_DAILY_CAP: z.coerce.number().default(300),
 
+  // Undo-send: outbound messages sit in a delayed queue for this many seconds
+  // before the worker picks them up, during which the sender can retract them.
+  // 0 disables the window (sends dispatch immediately).
+  UNDO_SEND_SECONDS: z.coerce.number().default(8),
+
   // SMTP (magic-link sign-in, invites, notifications). Optional.
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),

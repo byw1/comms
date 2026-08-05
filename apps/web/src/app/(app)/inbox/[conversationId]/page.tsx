@@ -1,8 +1,7 @@
 import { notFound } from 'next/navigation';
 import { loadConfig } from '@comms/core';
 import { getConversation, getMessages, listAgents, listTags, listMacros } from '@/server/queries';
-import { MessageThread } from '@/components/inbox/message-thread';
-import { Composer } from '@/components/inbox/composer';
+import { ThreadShell } from '@/components/inbox/thread-shell';
 import { TicketPanel } from '@/components/inbox/ticket-panel';
 import { ConversationHeader } from '@/components/inbox/conversation-header';
 
@@ -37,8 +36,10 @@ export default async function ConversationPage({
           name={contactName}
           status={conversation.status}
         />
-        <MessageThread
+        <ThreadShell
           conversationId={conversation.id}
+          macros={macros.map((m) => ({ id: m.id, name: m.name, body: m.body }))}
+          aiEnabled={aiEnabled}
           messages={messages.map((m) => ({
             id: m.id,
             body: m.body,
@@ -59,11 +60,6 @@ export default async function ConversationPage({
               status: a.status,
             })),
           }))}
-        />
-        <Composer
-          conversationId={conversation.id}
-          macros={macros.map((m) => ({ id: m.id, name: m.name, body: m.body }))}
-          aiEnabled={aiEnabled}
         />
       </div>
       <TicketPanel

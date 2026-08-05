@@ -1,14 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 import { Send, Zap, StickyNote, CornerDownLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { AnimatePresence, motion } from '@/components/ui/motion';
-import { sendMessage } from '@/server/actions/inbox';
 import { AiAssist } from '@/components/inbox/ai-assist';
 import { cn } from '@/lib/utils';
 
@@ -16,18 +13,30 @@ export function Composer({
   conversationId,
   macros,
   aiEnabled,
+  onSubmit,
 }: {
   conversationId: string;
   macros: { id: string; name: string; body: string }[];
   aiEnabled: boolean;
+  /**
+   * Owns the actual send (optimistic append + server action + undo toast).
+   * Returns false on failure so the composer can restore the draft.
+   */
+  onSubmit: (body: string, isNote: boolean) => Promise<boolean>;
 }) {
-  const router = useRouter();
   const [body, setBody] = useState('');
   const [isNote, setIsNote] = useState(false);
   const [focused, setFocused] = useState(false);
   const [pending, start] = useTransition();
   const ref = useRef<HTMLTextAreaElement>(null);
   const lastTypingPing = useRef(0);
+
+  // The global `r` shortcut focuses the composer from anywhere in the thread.
+  useEffect(() => {
+    const focus = () => ref.current?.focus();
+    window.addEventListener('comms:focus-composer', focus);
+    return () => window.removeEventListener('comms:focus-composer', focus);
+  }, []);
 
   // Broadcast a throttled "typing" presence ping so other agents see collisions.
   useEffect(() => {
@@ -53,19 +62,16 @@ export function Composer({
   function submit() {
     const trimmed = body.trim();
     if (!trimmed) return;
+    // Optimistic: clear the field immediately — the shell shows the bubble.
+    setBody('');
     start(async () => {
-      const res = await sendMessage({ conversationId, body: trimmed, isPrivateNote: isNote });
-      if (!res.ok) {
-        toast.error(res.error);
-        return;
-      }
-      setBody('');
-      router.refresh();
+      const ok = await onSubmit(trimmed, isNote);
+      if (!ok) setBody(trimmed); // restore the draft on failure
     });
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       submit();
     }

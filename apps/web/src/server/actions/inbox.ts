@@ -11,12 +11,23 @@ import {
   inboxes,
   contacts,
 } from '@comms/db';
-import { newTempGuid, enqueueOutbound, publishEvent } from '@comms/core';
+import {
+  newTempGuid,
+  enqueueOutbound,
+  outboundQueue,
+  publishEvent,
+  loadConfig,
+} from '@comms/core';
+import { desc } from '@comms/db';
 import { db } from '@/server/db';
 import { requireUser } from '@/lib/session';
 import { getConnectionForInbox } from '@/server/queries';
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
+
+export type SendResult =
+  | { ok: true; messageId: string; undoMs: number }
+  | { ok: false; error: string };
 
 /** Parse @mentions in an internal note and notify matched teammates. */
 async function notifyMentions(
@@ -59,7 +70,7 @@ export async function sendMessage(input: {
   body: string;
   isPrivateNote?: boolean;
   replyToMessageGuid?: string;
-}): Promise<ActionResult> {
+}): Promise<SendResult> {
   const user = await requireUser();
   const body = input.body.trim();
   if (!body) return { ok: false, error: 'Message is empty.' };
@@ -118,12 +129,19 @@ export async function sendMessage(input: {
     })
     .where(eq(conversations.id, conv.id));
 
+  // Undo-send: real replies sit in a delayed job for the undo window; undoSend
+  // removes the job by id before the worker ever sees it. Notes skip this.
+  const undoMs = input.isPrivateNote ? 0 : loadConfig().UNDO_SEND_SECONDS * 1000;
+
   if (!input.isPrivateNote && connection) {
-    await enqueueOutbound({
-      messageId: msg.id,
-      conversationId: conv.id,
-      connectionId: connection.id,
-    });
+    await enqueueOutbound(
+      {
+        messageId: msg.id,
+        conversationId: conv.id,
+        connectionId: connection.id,
+      },
+      { jobId: msg.id, delay: undoMs },
+    );
   }
 
   if (input.isPrivateNote) {
@@ -137,6 +155,57 @@ export async function sendMessage(input: {
     messageId: msg.id,
   });
   revalidatePath(`/inbox/${conv.id}`);
+  return { ok: true, messageId: msg.id, undoMs };
+}
+
+/**
+ * Retract a reply that is still inside its undo window. Removes the delayed
+ * BullMQ job (by jobId = messageId) and deletes the message row. Fails cleanly
+ * if the worker already picked the job up.
+ */
+export async function undoSend(messageId: string): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const msg = await db.query.messages.findFirst({ where: eq(messages.id, messageId) });
+  if (!msg) return { ok: false, error: 'Message not found.' };
+  if (msg.authorUserId !== user.id) return { ok: false, error: 'Only the sender can undo.' };
+  if (msg.status !== 'queued') return { ok: false, error: 'Too late — already sent.' };
+
+  const removed = await outboundQueue()
+    .remove(messageId)
+    .catch(() => 0);
+  if (!removed) {
+    // The worker grabbed it between our check and the remove.
+    return { ok: false, error: 'Too late — already sending.' };
+  }
+
+  await db.delete(messages).where(eq(messages.id, messageId));
+
+  // Roll the conversation preview back to the latest remaining message.
+  const latest = await db.query.messages.findFirst({
+    where: eq(messages.conversationId, msg.conversationId),
+    orderBy: [desc(messages.createdAt)],
+  });
+  const conv = await db.query.conversations.findFirst({
+    where: eq(conversations.id, msg.conversationId),
+    columns: { id: true, inboxId: true },
+  });
+  await db
+    .update(conversations)
+    .set({
+      lastMessageAt: latest?.sentAt ?? latest?.createdAt ?? null,
+      lastMessagePreview: latest?.body?.slice(0, 280) ?? '',
+    })
+    .where(eq(conversations.id, msg.conversationId));
+
+  if (conv) {
+    await publishEvent({
+      type: 'conversation.updated',
+      conversationId: conv.id,
+      inboxId: conv.inboxId,
+    });
+  }
+  revalidatePath(`/inbox/${msg.conversationId}`);
   return { ok: true };
 }
 

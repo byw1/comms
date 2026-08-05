@@ -1,6 +1,7 @@
 import { requireUser } from '@/lib/session';
 import { listConversations, listInboxes } from '@/server/queries';
 import { ConversationListPane } from '@/components/inbox/conversation-list';
+import { KeyboardShortcuts } from '@/components/app/keyboard-shortcuts';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,7 @@ export default async function InboxLayout({ children }: { children: React.ReactN
         showChannels={inboxRows.length > 1}
       />
       <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+      <KeyboardShortcuts />
     </div>
   );
 }

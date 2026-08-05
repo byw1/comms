@@ -1,6 +1,6 @@
 'use client';
 
-import { useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Sparkles, AlertTriangle, Clock, Star } from 'lucide-react';
@@ -80,13 +80,36 @@ export function TicketPanel({
   } | null;
 }) {
   const router = useRouter();
-  const [pending, start] = useTransition();
+  const [, start] = useTransition();
+  const pending = false; // controls stay interactive — updates are optimistic
 
-  function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
+  // Optimistic local copies of every editable field: the control flips
+  // instantly, the server action runs in the background, failures revert.
+  // Server props re-sync after router.refresh (SSE-driven or explicit).
+  const [status, setStatus] = useState(conversation.status);
+  const [priority, setPriority] = useState(conversation.priority);
+  const [assigneeId, setAssigneeId] = useState(conversation.assigneeId);
+  const [tagIds, setTagIds] = useState<string[]>(conversation.tagIds);
+  useEffect(() => setStatus(conversation.status), [conversation.status]);
+  useEffect(() => setPriority(conversation.priority), [conversation.priority]);
+  useEffect(() => setAssigneeId(conversation.assigneeId), [conversation.assigneeId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setTagIds(conversation.tagIds), [conversation.tagIds.join(',')]);
+
+  function optimistic(
+    apply: () => void,
+    revert: () => void,
+    fn: () => Promise<{ ok: boolean; error?: string }>,
+  ) {
+    apply();
     start(async () => {
       const res = await fn();
-      if (!res.ok) toast.error(res.error ?? 'Something went wrong');
-      else router.refresh();
+      if (!res.ok) {
+        revert();
+        toast.error(res.error ?? 'Something went wrong');
+      } else {
+        router.refresh();
+      }
     });
   }
 
@@ -141,15 +164,16 @@ export function TicketPanel({
         <div className="space-y-2.5">
           <Field label="Assignee">
             <Select
-              value={conversation.assigneeId ?? UNASSIGNED}
-              onValueChange={(v) =>
-                run(() =>
-                  updateConversation({
-                    id: conversation.id,
-                    assigneeId: v === UNASSIGNED ? null : v,
-                  }),
-                )
-              }
+              value={assigneeId ?? UNASSIGNED}
+              onValueChange={(v) => {
+                const prev = assigneeId;
+                const next = v === UNASSIGNED ? null : v;
+                optimistic(
+                  () => setAssigneeId(next),
+                  () => setAssigneeId(prev),
+                  () => updateConversation({ id: conversation.id, assigneeId: next }),
+                );
+              }}
               disabled={pending}
             >
               <SelectTrigger className="h-8 text-[12.5px]">
@@ -168,15 +192,19 @@ export function TicketPanel({
 
           <Field label="Status">
             <Select
-              value={conversation.status}
-              onValueChange={(v) =>
-                run(() =>
-                  updateConversation({
-                    id: conversation.id,
-                    status: v as 'open' | 'pending' | 'snoozed' | 'closed',
-                  }),
-                )
-              }
+              value={status}
+              onValueChange={(v) => {
+                const prev = status;
+                optimistic(
+                  () => setStatus(v),
+                  () => setStatus(prev),
+                  () =>
+                    updateConversation({
+                      id: conversation.id,
+                      status: v as 'open' | 'pending' | 'snoozed' | 'closed',
+                    }),
+                );
+              }}
               disabled={pending}
             >
               <SelectTrigger className="h-8 text-[12.5px]">
@@ -193,15 +221,19 @@ export function TicketPanel({
 
           <Field label="Priority">
             <Select
-              value={conversation.priority}
-              onValueChange={(v) =>
-                run(() =>
-                  updateConversation({
-                    id: conversation.id,
-                    priority: v as 'low' | 'normal' | 'high' | 'urgent',
-                  }),
-                )
-              }
+              value={priority}
+              onValueChange={(v) => {
+                const prev = priority;
+                optimistic(
+                  () => setPriority(v),
+                  () => setPriority(prev),
+                  () =>
+                    updateConversation({
+                      id: conversation.id,
+                      priority: v as 'low' | 'normal' | 'high' | 'urgent',
+                    }),
+                );
+              }}
               disabled={pending}
             >
               <SelectTrigger className="h-8 text-[12.5px]">
@@ -224,12 +256,22 @@ export function TicketPanel({
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {allTags.map((t) => {
-              const active = conversation.tagIds.includes(t.id);
+              const active = tagIds.includes(t.id);
               return (
                 <button
                   key={t.id}
                   disabled={pending}
-                  onClick={() => run(() => toggleTag(conversation.id, t.id))}
+                  onClick={() => {
+                    const prev = tagIds;
+                    optimistic(
+                      () =>
+                        setTagIds(
+                          active ? prev.filter((id) => id !== t.id) : [...prev, t.id],
+                        ),
+                      () => setTagIds(prev),
+                      () => toggleTag(conversation.id, t.id),
+                    );
+                  }}
                   className={cn(
                     'rounded-md border px-2 py-0.5 text-[11.5px] font-medium transition-all duration-150 active:scale-95',
                     active

@@ -1,12 +1,20 @@
 'use client';
 
-import { useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Check, RotateCcw } from 'lucide-react';
+import { Check, RotateCcw, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { updateConversation } from '@/server/actions/inbox';
 import { PresenceBar } from '@/components/inbox/presence-bar';
+import { SNOOZE_PRESETS } from '@/lib/snooze';
 import { cn } from '@/lib/utils';
 
 /** Status is a dot + label rather than a filled chip — quieter in a header. */
@@ -21,7 +29,7 @@ export function ConversationHeader({
   conversationId,
   number,
   name,
-  status,
+  status: serverStatus,
 }: {
   conversationId: string;
   number: number;
@@ -29,13 +37,50 @@ export function ConversationHeader({
   status: string;
 }) {
   const router = useRouter();
-  const [pending, start] = useTransition();
+  const [, start] = useTransition();
+  // Optimistic status: flips instantly on click, server props reconcile later.
+  const [status, setStatus] = useState(serverStatus);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  useEffect(() => setStatus(serverStatus), [serverStatus]);
 
-  function setStatus(next: 'open' | 'closed') {
+  // The global `s` shortcut opens the snooze menu for the open conversation.
+  useEffect(() => {
+    const open = () => setSnoozeOpen(true);
+    window.addEventListener('comms:snooze-open', open);
+    return () => window.removeEventListener('comms:snooze-open', open);
+  }, []);
+
+  function applyStatus(next: 'open' | 'closed') {
+    const prev = status;
+    setStatus(next);
     start(async () => {
       const res = await updateConversation({ id: conversationId, status: next });
-      if (!res.ok) toast.error(res.error);
-      else router.refresh();
+      if (!res.ok) {
+        setStatus(prev);
+        toast.error(res.error);
+      } else {
+        router.refresh();
+      }
+    });
+  }
+
+  function snooze(until: Date, label: string) {
+    const prev = status;
+    setStatus('snoozed');
+    setSnoozeOpen(false);
+    start(async () => {
+      const res = await updateConversation({
+        id: conversationId,
+        status: 'snoozed',
+        snoozedUntil: until.toISOString(),
+      });
+      if (!res.ok) {
+        setStatus(prev);
+        toast.error(res.error);
+      } else {
+        toast.success(`Snoozed until ${label.toLowerCase()}`);
+        router.refresh();
+      }
     });
   }
 
@@ -52,17 +97,50 @@ export function ConversationHeader({
         </span>
       </div>
 
-      <div className="flex shrink-0 items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2">
         <PresenceBar conversationId={conversationId} />
+
+        {status !== 'closed' && (
+          <DropdownMenu open={snoozeOpen} onOpenChange={setSnoozeOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="ghost" className="gap-1.5">
+                <Clock className="h-3.5 w-3.5" />
+                Snooze
+                <kbd className="ml-0.5 rounded border bg-secondary px-1 text-[10px] text-muted-foreground">
+                  s
+                </kbd>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                Snooze until…
+              </DropdownMenuLabel>
+              {SNOOZE_PRESETS.map((p) => {
+                const when = p.until();
+                return (
+                  <DropdownMenuItem key={p.key} onClick={() => snooze(when, p.label)}>
+                    <span className="flex-1">{p.label}</span>
+                    <span className="tabular text-[11px] text-muted-foreground">
+                      {when.toLocaleDateString(undefined, { weekday: 'short' })}{' '}
+                      {when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                    </span>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
         {status === 'closed' ? (
-          <Button size="sm" variant="outline" onClick={() => setStatus('open')} loading={pending}>
+          <Button size="sm" variant="outline" onClick={() => applyStatus('open')}>
             <RotateCcw className="h-3.5 w-3.5" />
             Reopen
           </Button>
         ) : (
-          <Button size="sm" onClick={() => setStatus('closed')} loading={pending}>
+          <Button size="sm" onClick={() => applyStatus('closed')}>
             <Check className="h-3.5 w-3.5" />
             Close
+            <kbd className="ml-0.5 rounded border border-white/25 px-1 text-[10px] opacity-70">e</kbd>
           </Button>
         )}
       </div>
