@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Check, RotateCcw, Clock } from 'lucide-react';
+import { Check, RotateCcw, Clock, ChevronLeft, PanelRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -85,10 +86,17 @@ export function ConversationHeader({
   }
 
   return (
-    <header className="flex h-[52px] shrink-0 items-center justify-between gap-4 border-b bg-surface/80 px-4 backdrop-blur-xl">
-      <div className="flex min-w-0 items-center gap-2.5">
+    <header className="flex h-[52px] shrink-0 items-center justify-between gap-2 border-b bg-surface/80 px-2.5 backdrop-blur-xl md:gap-4 md:px-4">
+      <div className="flex min-w-0 items-center gap-2 md:gap-2.5">
+        <Link
+          href="/inbox"
+          className="-ml-0.5 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
+          aria-label="Back to conversations"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </Link>
         <h1 className="truncate text-[14px] font-semibold tracking-[-0.01em]">{name}</h1>
-        <span className="tabular shrink-0 rounded-md bg-secondary px-1.5 py-px font-mono text-[11px] text-muted-foreground">
+        <span className="tabular hidden shrink-0 rounded-md bg-secondary px-1.5 py-px font-mono text-[11px] text-muted-foreground sm:inline">
           #{number}
         </span>
         <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] capitalize text-muted-foreground">
@@ -97,16 +105,18 @@ export function ConversationHeader({
         </span>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
-        <PresenceBar conversationId={conversationId} />
+      <div className="flex shrink-0 items-center gap-1 md:gap-2">
+        <div className="hidden sm:block">
+          <PresenceBar conversationId={conversationId} />
+        </div>
 
         {status !== 'closed' && (
           <DropdownMenu open={snoozeOpen} onOpenChange={setSnoozeOpen}>
             <DropdownMenuTrigger asChild>
               <Button size="sm" variant="ghost" className="gap-1.5">
                 <Clock className="h-3.5 w-3.5" />
-                Snooze
-                <kbd className="ml-0.5 rounded border bg-secondary px-1 text-[10px] text-muted-foreground">
+                <span className="hidden sm:inline">Snooze</span>
+                <kbd className="ml-0.5 hidden rounded border bg-secondary px-1 text-[10px] text-muted-foreground md:inline">
                   s
                 </kbd>
               </Button>
@@ -140,9 +150,21 @@ export function ConversationHeader({
           <Button size="sm" onClick={() => applyStatus('closed')}>
             <Check className="h-3.5 w-3.5" />
             Close
-            <kbd className="ml-0.5 rounded border border-white/25 px-1 text-[10px] opacity-70">e</kbd>
+            <kbd className="ml-0.5 hidden rounded border border-primary-foreground/25 px-1 text-[10px] opacity-70 md:inline">
+              e
+            </kbd>
           </Button>
         )}
+
+        {/* Ticket details live in a slide-over below lg. */}
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event('comms:toggle-details'))}
+          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
+          aria-label="Ticket details"
+        >
+          <PanelRight className="h-[18px] w-[18px]" />
+        </button>
       </div>
     </header>
   );

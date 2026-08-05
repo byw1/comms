@@ -51,18 +51,11 @@ function NavRow({
 
       {Icon && <Icon className="h-[15px] w-[15px] shrink-0" />}
       {dot && (
-        <span className="relative flex h-2.5 w-2.5 shrink-0 items-center justify-center">
-          <span
-            className={cn('h-2.5 w-2.5 rounded-full', !dot.connected && 'opacity-35')}
-            style={{ backgroundColor: dot.color }}
-          />
-          {dot.connected && (
-            <span
-              className="absolute h-2.5 w-2.5 animate-pulse-ring rounded-full"
-              style={{ backgroundColor: dot.color, opacity: 0.35 }}
-            />
-          )}
-        </span>
+        <span
+          className={cn('h-2 w-2 shrink-0 rounded-full', !dot.connected && 'opacity-35')}
+          style={{ backgroundColor: dot.color }}
+          title={dot.connected ? 'Connected' : 'Not connected'}
+        />
       )}
       <span className="flex-1 truncate">{label}</span>
       {count ? (
@@ -117,7 +110,7 @@ export function Sidebar({
   ];
 
   return (
-    <aside className="flex w-[248px] shrink-0 flex-col border-r bg-surface-sunken">
+    <aside className="flex h-full w-[248px] shrink-0 flex-col border-r bg-surface-sunken">
       <div className="flex h-[52px] items-center justify-between px-3.5">
         <Logo size="sm" />
         <div className="flex items-center gap-0.5">

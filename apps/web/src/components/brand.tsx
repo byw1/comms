@@ -1,9 +1,8 @@
 import { cn } from '@/lib/utils';
 
 /**
- * The Comms wordmark. The mark carries the accent gradient — it's the one place
- * the brand colour appears at full strength, which is what makes it read as a
- * logo rather than as another UI chip.
+ * The Comms wordmark. Flat ink tile — black in light mode, white in dark.
+ * No gradient, no highlight: the monochrome system IS the brand.
  */
 export function Logo({
   className,
@@ -22,15 +21,12 @@ export function Logo({
     <div className={cn('flex items-center gap-2.5', className)}>
       <div
         className={cn(
-          'relative flex items-center justify-center overflow-hidden text-white shadow-brand',
-          'bg-gradient-to-br from-brand to-brand/75',
+          'flex items-center justify-center bg-primary text-primary-foreground',
           radius,
           mark,
         )}
       >
-        {/* Specular highlight — keeps the mark from looking like a flat swatch. */}
-        <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/25 to-transparent" />
-        <svg viewBox="0 0 24 24" className="relative h-[58%] w-[58%]" fill="none" aria-hidden>
+        <svg viewBox="0 0 24 24" className="h-[58%] w-[58%]" fill="none" aria-hidden>
           <path
             d="M4 6.5C4 5.12 5.12 4 6.5 4h11C18.88 4 20 5.12 20 6.5v7c0 1.38-1.12 2.5-2.5 2.5H9l-4 4V6.5Z"
             fill="currentColor"

@@ -116,7 +116,7 @@ export function TicketPanel({
   const showSla = Boolean(sla?.slaBreachedAt || sla?.nextResponseDueAt || sla?.csatScore != null);
 
   return (
-    <aside className="flex w-[288px] shrink-0 flex-col overflow-y-auto border-l bg-surface">
+    <aside className="flex h-full w-[85vw] max-w-[320px] shrink-0 flex-col overflow-y-auto border-l bg-surface lg:w-[288px]">
       <div className="flex flex-col items-center gap-2.5 px-4 py-5 text-center">
         <Avatar className="h-14 w-14 ring-1 ring-border">
           <AvatarFallback className="bg-brand-muted text-base font-semibold text-brand">

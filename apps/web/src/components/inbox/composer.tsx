@@ -205,7 +205,7 @@ export function Composer({
         </div>
       </div>
 
-      <p className="flex items-center gap-1 px-1.5 pt-1.5 text-[10.5px] text-muted-foreground">
+      <p className="hidden items-center gap-1 px-1.5 pt-1.5 text-[10.5px] text-muted-foreground md:flex">
         <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">
           <CornerDownLeft className="inline h-2.5 w-2.5" />
         </kbd>

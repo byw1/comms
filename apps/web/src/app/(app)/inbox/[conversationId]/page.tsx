@@ -4,6 +4,7 @@ import { getConversation, getMessages, listAgents, listTags, listMacros } from '
 import { ThreadShell } from '@/components/inbox/thread-shell';
 import { TicketPanel } from '@/components/inbox/ticket-panel';
 import { ConversationHeader } from '@/components/inbox/conversation-header';
+import { DetailsPaneShell } from '@/components/app/mobile-shell';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,8 +63,9 @@ export default async function ConversationPage({
           }))}
         />
       </div>
-      <TicketPanel
-        conversation={{
+      <DetailsPaneShell>
+        <TicketPanel
+          conversation={{
           id: conversation.id,
           status: conversation.status,
           priority: conversation.priority,
@@ -81,7 +83,8 @@ export default async function ConversationPage({
           slaBreachedAt: conversation.slaBreachedAt,
           csatScore: conversation.csatScore,
         }}
-      />
+        />
+      </DetailsPaneShell>
     </div>
   );
 }

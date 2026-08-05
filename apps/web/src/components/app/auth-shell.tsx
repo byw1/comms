@@ -29,12 +29,6 @@ export function AuthShell({
           WebkitMaskImage: 'radial-gradient(ellipse 70% 55% at 50% 45%, black, transparent)',
         }}
       />
-      {/* Brand glow */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute left-1/2 top-0 h-[420px] w-[720px] -translate-x-1/2 -translate-y-1/3 rounded-full opacity-[0.16] blur-[110px]"
-        style={{ background: 'hsl(var(--brand))' }}
-      />
 
       <div className="relative w-full max-w-[400px] animate-slide-up">
         <div className="mb-7 flex flex-col items-center gap-3.5 text-center">

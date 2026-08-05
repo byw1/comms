@@ -4,6 +4,7 @@ import { Sidebar } from '@/components/app/sidebar';
 import { RealtimeProvider } from '@/components/app/realtime-provider';
 import { ChannelHealthBanner } from '@/components/app/channel-health-banner';
 import { CommandPalette } from '@/components/app/command-palette';
+import { MobileTopBar, SidebarShell } from '@/components/app/mobile-shell';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,14 +27,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <RealtimeProvider
       currentUser={{ id: user.id, name: user.name ?? null, image: user.image ?? null }}
     >
-      <div className="flex h-screen flex-col overflow-hidden">
+      <div className="flex h-dvh flex-col overflow-hidden">
         <ChannelHealthBanner initial={unhealthy} />
+        <MobileTopBar />
         <div className="flex min-h-0 flex-1">
-          <Sidebar
-            user={{ name: user.name, email: user.email, image: user.image }}
-            counts={counts}
-            inboxes={inboxList}
-          />
+          <SidebarShell>
+            <Sidebar
+              user={{ name: user.name, email: user.email, image: user.image }}
+              counts={counts}
+              inboxes={inboxList}
+            />
+          </SidebarShell>
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
         </div>
       </div>

@@ -37,7 +37,7 @@ export default async function InboxEmptyPage() {
           </>
         ) : (
           <>
-            <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-brand to-brand/75 text-white shadow-brand">
+            <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-xl bg-primary text-primary-foreground">
               <Plug className="h-5 w-5" />
             </div>
             <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Connect your iMessage</h2>

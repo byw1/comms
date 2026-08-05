@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Search, Check, Loader2, Inbox as InboxIcon, X, Sparkles } from 'lucide-react';
+import { Search, Check, Loader2, Inbox as InboxIcon, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -105,7 +105,14 @@ export function ConversationListPane({
     filtered.length === 0 && !query && !assignee && statusFilter === 'active' && !inboxFilter;
 
   return (
-    <div className="flex w-[344px] shrink-0 flex-col border-r bg-surface">
+    // Mobile is master/detail: the list owns the screen at /inbox and hides
+    // once a conversation is open; md+ shows both panes side by side.
+    <div
+      className={cn(
+        'w-full shrink-0 flex-col border-r bg-surface md:flex md:w-[344px]',
+        activeId ? 'hidden' : 'flex',
+      )}
+    >
       <div className="space-y-2.5 px-3 pb-2.5 pt-3">
         <div className="group relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-muted-foreground/70 transition-colors group-focus-within:text-brand" />
@@ -202,11 +209,8 @@ export function ConversationListPane({
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {inboxZero ? (
           <div className="flex animate-slide-up flex-col items-center justify-center gap-3.5 px-6 py-20 text-center">
-            <div className="relative">
-              <div className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-brand to-brand/70 text-white shadow-brand">
-                <Check className="h-6 w-6" strokeWidth={2.5} />
-              </div>
-              <Sparkles className="absolute -right-2 -top-2 h-4 w-4 text-warning" />
+            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary text-primary-foreground">
+              <Check className="h-6 w-6" strokeWidth={2.5} />
             </div>
             <div>
               <p className="text-[15px] font-semibold tracking-[-0.01em]">Inbox Zero</p>

@@ -3,135 +3,133 @@
 @tailwind utilities;
 
 /*
- * Comms design system.
+ * Comms design system — strict monochrome.
  *
- * Monochrome base + a single indigo accent. The neutrals are very slightly cool
- * (a touch of blue in the hue channel) which reads as "designed" rather than the
- * dead 0% gray you get from stock shadcn. The accent is used sparingly: focus
- * rings, active navigation, unread state, outbound message bubbles. Primary
- * buttons stay near-black so the accent never loses its meaning.
+ * No accent hue anywhere in the chrome: black is the accent. Active states,
+ * buttons, focus rings, unread markers, and outbound bubbles are all ink
+ * (near-black on white; white on black in dark mode). The only color left in
+ * the product is semantic and small: red for failure/overdue, green for
+ * connected/success, amber for warnings and internal notes — signals, not
+ * decoration.
+ *
+ * `--brand` is retained as a token name (every component references it) but is
+ * now an alias for ink. Dark mode is true black: #000 canvas, near-black
+ * surfaces, so OLED screens actually turn off.
  */
 @layer base {
   :root {
-    /* Surfaces — layered light-to-dark so panes read as stacked, not tiled. */
-    --background: 240 20% 99%;
+    --background: 0 0% 100%;
     --surface: 0 0% 100%;
-    --surface-sunken: 240 16% 97%;
+    --surface-sunken: 0 0% 97.6%;
 
-    --foreground: 240 10% 8%;
+    --foreground: 0 0% 5%;
 
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 8%;
+    --card-foreground: 0 0% 5%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 8%;
+    --popover-foreground: 0 0% 5%;
 
-    /* Primary stays near-black: high-contrast, neutral, timeless. */
-    --primary: 240 10% 8%;
+    --primary: 0 0% 7%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 14% 96%;
-    --secondary-foreground: 240 10% 12%;
+    --secondary: 0 0% 95.5%;
+    --secondary-foreground: 0 0% 10%;
 
-    --muted: 240 14% 96%;
-    --muted-foreground: 240 5% 46%;
+    --muted: 0 0% 95.5%;
+    --muted-foreground: 0 0% 44%;
 
-    --accent: 240 14% 95.5%;
-    --accent-foreground: 240 10% 12%;
+    --accent: 0 0% 95%;
+    --accent-foreground: 0 0% 10%;
 
-    /* The one accent. Restraint is the point — see usage note above. */
-    --brand: 245 78% 60%;
+    /* Ink "accent" — alias of primary, kept for component compatibility. */
+    --brand: 0 0% 7%;
     --brand-foreground: 0 0% 100%;
-    --brand-muted: 245 90% 97%;
-    --brand-border: 245 60% 88%;
+    --brand-muted: 0 0% 94.5%;
+    --brand-border: 0 0% 85%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 65% 48%;
     --destructive-foreground: 0 0% 100%;
-    --destructive-muted: 0 86% 97%;
+    --destructive-muted: 0 70% 97%;
 
-    --success: 152 62% 40%;
+    --success: 152 45% 38%;
     --success-foreground: 0 0% 100%;
-    --success-muted: 152 60% 96%;
+    --success-muted: 152 40% 96%;
 
-    --warning: 32 94% 48%;
+    --warning: 35 80% 44%;
     --warning-foreground: 0 0% 100%;
-    --warning-muted: 38 92% 96%;
+    --warning-muted: 40 75% 96%;
 
-    --border: 240 12% 90%;
-    --border-strong: 240 10% 84%;
-    --input: 240 12% 89%;
-    --ring: 245 78% 60%;
+    --border: 0 0% 90.5%;
+    --border-strong: 0 0% 83%;
+    --input: 0 0% 88%;
+    --ring: 0 0% 7%;
 
-    --radius: 0.7rem;
+    --radius: 0.65rem;
 
-    /* Elevation. Multi-layer and low-alpha — one flat shadow reads cheap. */
-    --shadow-xs: 0 1px 2px -1px hsl(240 20% 12% / 0.06);
-    --shadow-sm:
-      0 1px 2px -1px hsl(240 20% 12% / 0.07), 0 1px 1px -1px hsl(240 20% 12% / 0.04);
-    --shadow-md:
-      0 4px 8px -3px hsl(240 20% 12% / 0.08), 0 2px 4px -2px hsl(240 20% 12% / 0.05);
-    --shadow-lg:
-      0 12px 24px -8px hsl(240 20% 12% / 0.12), 0 4px 8px -4px hsl(240 20% 12% / 0.06);
-    --shadow-xl:
-      0 24px 48px -12px hsl(240 20% 12% / 0.18), 0 8px 16px -8px hsl(240 20% 12% / 0.08);
-    --shadow-brand: 0 4px 14px -4px hsl(245 78% 60% / 0.35);
+    --shadow-xs: 0 1px 2px -1px hsl(0 0% 0% / 0.06);
+    --shadow-sm: 0 1px 2px -1px hsl(0 0% 0% / 0.07), 0 1px 1px -1px hsl(0 0% 0% / 0.04);
+    --shadow-md: 0 4px 8px -3px hsl(0 0% 0% / 0.08), 0 2px 4px -2px hsl(0 0% 0% / 0.05);
+    --shadow-lg: 0 12px 24px -8px hsl(0 0% 0% / 0.12), 0 4px 8px -4px hsl(0 0% 0% / 0.06);
+    --shadow-xl: 0 24px 48px -12px hsl(0 0% 0% / 0.18), 0 8px 16px -8px hsl(0 0% 0% / 0.08);
+    --shadow-brand: var(--shadow-md);
   }
 
   .dark {
-    /* Not pure black — a hint of blue keeps large dark areas from looking dead. */
-    --background: 240 12% 6%;
-    --surface: 240 11% 8.5%;
-    --surface-sunken: 240 12% 5%;
+    /* True black. The canvas is #000; surfaces lift barely above it. */
+    --background: 0 0% 0%;
+    --surface: 0 0% 4.5%;
+    --surface-sunken: 0 0% 2.5%;
 
-    --foreground: 240 12% 96%;
+    --foreground: 0 0% 96%;
 
-    --card: 240 11% 8.5%;
-    --card-foreground: 240 12% 96%;
+    --card: 0 0% 4.5%;
+    --card-foreground: 0 0% 96%;
 
-    --popover: 240 11% 10%;
-    --popover-foreground: 240 12% 96%;
+    --popover: 0 0% 6%;
+    --popover-foreground: 0 0% 96%;
 
     --primary: 0 0% 100%;
-    --primary-foreground: 240 10% 8%;
+    --primary-foreground: 0 0% 5%;
 
-    --secondary: 240 8% 16%;
-    --secondary-foreground: 240 12% 96%;
+    --secondary: 0 0% 11%;
+    --secondary-foreground: 0 0% 96%;
 
-    --muted: 240 8% 15%;
-    --muted-foreground: 240 6% 61%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 58%;
 
-    --accent: 240 8% 17%;
-    --accent-foreground: 240 12% 96%;
+    --accent: 0 0% 12%;
+    --accent-foreground: 0 0% 96%;
 
-    /* Lifted and slightly desaturated so it doesn't vibrate on a dark ground. */
-    --brand: 245 90% 71%;
-    --brand-foreground: 240 10% 8%;
-    --brand-muted: 245 60% 16%;
-    --brand-border: 245 50% 30%;
+    --brand: 0 0% 100%;
+    --brand-foreground: 0 0% 5%;
+    --brand-muted: 0 0% 11%;
+    --brand-border: 0 0% 24%;
 
-    --destructive: 0 72% 60%;
+    --destructive: 0 60% 55%;
     --destructive-foreground: 0 0% 100%;
-    --destructive-muted: 0 60% 16%;
+    --destructive-muted: 0 45% 12%;
 
-    --success: 152 55% 50%;
-    --success-foreground: 240 10% 8%;
-    --success-muted: 152 45% 14%;
+    --success: 152 40% 48%;
+    --success-foreground: 0 0% 5%;
+    --success-muted: 152 35% 10%;
 
-    --warning: 38 92% 58%;
-    --warning-foreground: 240 10% 8%;
-    --warning-muted: 38 60% 15%;
+    --warning: 38 75% 55%;
+    --warning-foreground: 0 0% 5%;
+    --warning-muted: 38 45% 11%;
 
-    --border: 240 8% 18%;
-    --border-strong: 240 8% 26%;
-    --input: 240 8% 20%;
-    --ring: 245 90% 71%;
+    --border: 0 0% 13.5%;
+    --border-strong: 0 0% 22%;
+    --input: 0 0% 15%;
+    --ring: 0 0% 100%;
 
-    --shadow-xs: 0 1px 2px -1px hsl(0 0% 0% / 0.4);
-    --shadow-sm: 0 1px 2px -1px hsl(0 0% 0% / 0.5), 0 1px 1px -1px hsl(0 0% 0% / 0.3);
-    --shadow-md: 0 4px 8px -3px hsl(0 0% 0% / 0.5), 0 2px 4px -2px hsl(0 0% 0% / 0.35);
-    --shadow-lg: 0 12px 24px -8px hsl(0 0% 0% / 0.6), 0 4px 8px -4px hsl(0 0% 0% / 0.4);
-    --shadow-xl: 0 24px 48px -12px hsl(0 0% 0% / 0.7), 0 8px 16px -8px hsl(0 0% 0% / 0.45);
-    --shadow-brand: 0 4px 14px -4px hsl(245 90% 71% / 0.35);
+    /* On true black, shadows barely read — borders do the separating. */
+    --shadow-xs: 0 1px 2px -1px hsl(0 0% 0% / 0.6);
+    --shadow-sm: 0 1px 2px -1px hsl(0 0% 0% / 0.7);
+    --shadow-md: 0 4px 10px -4px hsl(0 0% 0% / 0.8);
+    --shadow-lg: 0 12px 28px -10px hsl(0 0% 0% / 0.9);
+    --shadow-xl: 0 24px 48px -12px hsl(0 0% 0% / 0.9);
+    --shadow-brand: var(--shadow-md);
   }
 }
 
@@ -160,12 +158,12 @@
   }
 
   ::selection {
-    background-color: hsl(var(--brand) / 0.22);
+    background-color: hsl(var(--foreground) / 0.14);
   }
 
   /* One consistent focus treatment across every interactive element. */
   :focus-visible {
-    @apply outline-none ring-2 ring-ring/60 ring-offset-2 ring-offset-background;
+    @apply outline-none ring-2 ring-ring/50 ring-offset-2 ring-offset-background;
   }
 
   ::-webkit-scrollbar {

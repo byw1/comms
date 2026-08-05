@@ -138,7 +138,7 @@ export function MessageThread({
   let lastDay = '';
 
   return (
-    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-5 py-6">
+    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4 md:px-5 md:py-6">
       {messages.map((m, i) => {
         const stamp = m.sentAt ?? m.createdAt;
         const day = dayLabel(stamp);
@@ -236,7 +236,7 @@ export function MessageThread({
                   isNote
                     ? 'border border-warning/35 bg-warning-muted text-foreground'
                     : isOutbound
-                      ? 'bg-brand text-brand-foreground shadow-brand/30'
+                      ? 'bg-primary text-primary-foreground'
                       : 'bg-secondary text-secondary-foreground',
                 )}
               >
