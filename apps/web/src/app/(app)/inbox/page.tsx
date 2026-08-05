@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Inbox, Plug } from 'lucide-react';
+import { MessagesSquare, Plug } from 'lucide-react';
 import { listInboxes } from '@/server/queries';
 import { Button } from '@/components/ui/button';
 
@@ -10,29 +10,42 @@ export default async function InboxEmptyPage() {
   const hasConnection = inboxes.some((i) => i.connections.length > 0);
 
   return (
-    <div className="flex h-full flex-1 items-center justify-center p-8">
-      <div className="max-w-sm text-center">
+    <div className="relative flex h-full flex-1 items-center justify-center overflow-hidden p-8">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-50 dark:opacity-25"
+        style={{
+          backgroundImage: 'radial-gradient(hsl(var(--border-strong)) 1px, transparent 1px)',
+          backgroundSize: '22px 22px',
+          maskImage: 'radial-gradient(ellipse 60% 50% at 50% 50%, black, transparent)',
+          WebkitMaskImage: 'radial-gradient(ellipse 60% 50% at 50% 50%, black, transparent)',
+        }}
+      />
+
+      <div className="relative max-w-[340px] animate-slide-up text-center">
         {hasConnection ? (
           <>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-secondary">
-              <Inbox className="h-6 w-6 text-muted-foreground" />
+            <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-xl border bg-surface shadow-sm">
+              <MessagesSquare className="h-5 w-5 text-muted-foreground" />
             </div>
-            <h2 className="text-lg font-semibold">Select a conversation</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Choose a conversation from the list to start replying.
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Select a conversation</h2>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+              Choose one from the list to start replying, or press{' '}
+              <kbd className="rounded border bg-secondary px-1 py-px font-sans text-[11px]">⌘K</kbd>{' '}
+              to search.
             </p>
           </>
         ) : (
           <>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-secondary">
-              <Plug className="h-6 w-6 text-muted-foreground" />
+            <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-brand to-brand/75 text-white shadow-brand">
+              <Plug className="h-5 w-5" />
             </div>
-            <h2 className="text-lg font-semibold">Connect your iMessage</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Comms talks to iMessage through a BlueBubbles server running on your Mac. Connect it
-              to start receiving messages.
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Connect your iMessage</h2>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+              Comms talks to iMessage through a BlueBubbles server running on your Mac. Connect it to
+              start receiving messages.
             </p>
-            <Button asChild className="mt-4">
+            <Button asChild variant="brand" className="mt-5">
               <Link href="/settings/inboxes">Connect BlueBubbles</Link>
             </Button>
           </>

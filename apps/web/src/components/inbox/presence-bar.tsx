@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRealtime, useCurrentUser } from '@/components/app/realtime-provider';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { initials } from '@/lib/utils';
+import { cn, initials } from '@/lib/utils';
 
 type Peer = { userId: string; name: string; state: 'viewing' | 'typing'; expires: number };
 
@@ -72,19 +72,40 @@ export function PresenceBar({ conversationId }: { conversationId: string }) {
   const firstNames = (ps: Peer[]) => ps.map((p) => p.name.split(' ')[0]).join(', ');
 
   return (
-    <div className="flex items-center gap-2 text-xs text-warning">
-      <div className="flex -space-x-2">
+    <div
+      className={cn(
+        'flex items-center gap-2 rounded-full border py-1 pl-1 pr-2.5 text-[11.5px]',
+        typing.length > 0
+          ? 'border-warning/30 bg-warning-muted text-warning'
+          : 'border-border bg-secondary/60 text-muted-foreground',
+      )}
+    >
+      <div className="flex -space-x-1.5">
         {list.slice(0, 3).map((p) => (
-          <Avatar key={p.userId} className="h-6 w-6 border-2 border-card">
-            <AvatarFallback className="text-[10px]">{initials(p.name)}</AvatarFallback>
+          <Avatar key={p.userId} className="h-5 w-5 ring-2 ring-surface">
+            <AvatarFallback className="bg-secondary text-[9px] font-semibold">
+              {initials(p.name)}
+            </AvatarFallback>
           </Avatar>
         ))}
       </div>
-      <span>
-        {typing.length > 0
-          ? `${firstNames(typing)} ${typing.length > 1 ? 'are' : 'is'} typing…`
-          : `${firstNames(list)} also here`}
-      </span>
+      {typing.length > 0 ? (
+        <span className="flex items-center gap-1.5">
+          {firstNames(typing)} {typing.length > 1 ? 'are' : 'is'} typing
+          {/* Three staggered dots, the universal "still writing" signal. */}
+          <span className="flex items-end gap-[2px] pb-[2px]">
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="h-1 w-1 animate-typing-dot rounded-full bg-current"
+                style={{ animationDelay: `${i * 160}ms` }}
+              />
+            ))}
+          </span>
+        </span>
+      ) : (
+        <span>{firstNames(list)} also here</span>
+      )}
     </div>
   );
 }

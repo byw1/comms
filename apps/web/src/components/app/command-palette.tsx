@@ -120,42 +120,69 @@ export function CommandPalette() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="top-[18%] max-w-lg translate-y-0 gap-0 overflow-hidden p-0">
         <DialogTitle className="sr-only">Command palette</DialogTitle>
-        <div className="flex items-center gap-2 border-b px-3">
-          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="flex items-center gap-2.5 border-b px-3.5">
+          <Search className="h-[15px] w-[15px] shrink-0 text-muted-foreground" />
           <input
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Search conversations or jump to…"
-            className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="h-[52px] w-full bg-transparent text-[13.5px] outline-none placeholder:text-muted-foreground/70"
           />
+          <kbd className="shrink-0 rounded border bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            ESC
+          </kbd>
         </div>
-        <div className="max-h-80 overflow-y-auto p-1">
+        <div className="max-h-80 overflow-y-auto p-1.5">
           {items.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground">No results.</p>
+            <p className="px-3 py-8 text-center text-[13px] text-muted-foreground">No results.</p>
           ) : (
             items.map((it, i) => {
               const Icon = it.icon;
+              const selected = i === active;
               return (
                 <button
                   key={it.id}
                   onClick={it.action}
                   onMouseEnter={() => setActive(i)}
                   className={cn(
-                    'flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm',
-                    i === active ? 'bg-accent' : 'hover:bg-accent/60',
+                    'relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors duration-100',
+                    selected ? 'bg-brand-muted text-brand' : 'text-foreground hover:bg-accent/70',
                   )}
                 >
-                  <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="shrink-0">{it.label}</span>
+                  <Icon
+                    className={cn(
+                      'h-4 w-4 shrink-0',
+                      selected ? 'text-brand' : 'text-muted-foreground',
+                    )}
+                  />
+                  <span className="shrink-0 font-medium">{it.label}</span>
                   {it.sub && (
-                    <span className="ml-auto truncate text-xs text-muted-foreground">{it.sub}</span>
+                    <span
+                      className={cn(
+                        'ml-auto truncate text-[11.5px]',
+                        selected ? 'text-brand/70' : 'text-muted-foreground',
+                      )}
+                    >
+                      {it.sub}
+                    </span>
                   )}
                 </button>
               );
             })
           )}
+        </div>
+        <div className="flex items-center gap-3 border-t bg-surface-sunken px-3.5 py-2 text-[10.5px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border bg-surface px-1">↑</kbd>
+            <kbd className="rounded border bg-surface px-1">↓</kbd>
+            navigate
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border bg-surface px-1">↵</kbd>
+            open
+          </span>
         </div>
       </DialogContent>
     </Dialog>

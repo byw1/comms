@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
-import { Sparkles, FileText, Loader2 } from 'lucide-react';
+import { Sparkles, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -22,8 +22,11 @@ export function AiAssist({
 }) {
   const [pending, start] = useTransition();
   const [summary, setSummary] = useState<string | null>(null);
+  // Track which button fired so only that one shows a spinner.
+  const [active, setActive] = useState<'suggest' | 'summarize' | null>(null);
 
   function suggest() {
+    setActive('suggest');
     start(async () => {
       const res = await suggestReplyAction(conversationId);
       if (res.ok) {
@@ -32,14 +35,17 @@ export function AiAssist({
       } else {
         toast.error(res.error);
       }
+      setActive(null);
     });
   }
 
   function summarize() {
+    setActive('summarize');
     start(async () => {
       const res = await summarizeConversationAction(conversationId);
       if (res.ok) setSummary(res.text);
       else toast.error(res.error);
+      setActive(null);
     });
   }
 
@@ -48,24 +54,22 @@ export function AiAssist({
       <Button
         type="button"
         variant="ghost"
-        size="sm"
-        className="h-7 gap-1.5 text-xs"
+        size="xs"
+        className="gap-1.5 text-brand hover:bg-brand-muted hover:text-brand"
         onClick={suggest}
+        loading={pending && active === 'suggest'}
         disabled={pending}
       >
-        {pending ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Sparkles className="h-3.5 w-3.5" />
-        )}
+        <Sparkles className="h-3.5 w-3.5" />
         Suggest reply
       </Button>
       <Button
         type="button"
         variant="ghost"
-        size="sm"
-        className="h-7 gap-1.5 text-xs"
+        size="xs"
+        className="gap-1.5"
         onClick={summarize}
+        loading={pending && active === 'summarize'}
         disabled={pending}
       >
         <FileText className="h-3.5 w-3.5" />
@@ -76,10 +80,12 @@ export function AiAssist({
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />
+              <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-muted text-brand">
+                <Sparkles className="h-3.5 w-3.5" />
+              </span>
               Conversation summary
             </DialogTitle>
-            <DialogDescription className="whitespace-pre-wrap pt-2 text-sm text-foreground">
+            <DialogDescription className="whitespace-pre-wrap pt-2 text-[13.5px] leading-relaxed text-foreground">
               {summary}
             </DialogDescription>
           </DialogHeader>

@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Check, CheckCheck, Clock, Loader2, AlertCircle, Paperclip } from 'lucide-react';
+import { Check, CheckCheck, Clock, Loader2, AlertCircle, Paperclip, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { shortTime } from '@/lib/format';
+import { clockTime, dayLabel } from '@/lib/format';
 import { markRead } from '@/server/actions/inbox';
 
 type Attachment = {
@@ -48,7 +48,7 @@ function StatusTick({ message }: { message: ThreadMessage }) {
     case 'failed':
       return <AlertCircle className="h-3 w-3 text-destructive" />;
     case 'read':
-      return <CheckCheck className="h-3 w-3 text-sky-400" />;
+      return <CheckCheck className="h-3 w-3 text-brand" />;
     case 'delivered':
       return <CheckCheck className="h-3 w-3" />;
     default:
@@ -56,38 +56,65 @@ function StatusTick({ message }: { message: ThreadMessage }) {
   }
 }
 
-function AttachmentView({ att }: { att: Attachment }) {
+function AttachmentView({ att, onBubble }: { att: Attachment; onBubble: boolean }) {
   const isImage = att.mimeType?.startsWith('image/');
+
   if (att.status !== 'stored') {
     return (
-      <div className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs text-muted-foreground">
+      <div
+        className={cn(
+          'flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs',
+          onBubble ? 'border-white/20 text-current opacity-80' : 'text-muted-foreground',
+        )}
+      >
         <Loader2 className="h-3 w-3 animate-spin" />
-        {att.fileName ?? 'Attachment'} (downloading…)
+        {att.fileName ?? 'Attachment'} · downloading
       </div>
     );
   }
+
   if (isImage) {
-    // eslint-disable-next-line @next/next/no-img-element
     return (
-      <a href={`/api/attachments/${att.id}`} target="_blank" rel="noreferrer">
+      <a
+        href={`/api/attachments/${att.id}`}
+        target="_blank"
+        rel="noreferrer"
+        className="group/img block overflow-hidden rounded-xl"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={`/api/attachments/${att.id}`}
           alt={att.fileName ?? 'attachment'}
-          className="max-h-64 max-w-full rounded-lg border"
+          className="max-h-72 max-w-full rounded-xl border transition-transform duration-300 ease-smooth group-hover/img:scale-[1.02]"
         />
       </a>
     );
   }
+
   return (
     <a
       href={`/api/attachments/${att.id}`}
       target="_blank"
       rel="noreferrer"
-      className="flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs hover:bg-accent"
+      className={cn(
+        'flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors',
+        onBubble ? 'border-white/20 hover:bg-white/10' : 'hover:bg-accent',
+      )}
     >
-      <Paperclip className="h-3.5 w-3.5" />
-      {att.fileName ?? 'Download attachment'}
+      <Paperclip className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">{att.fileName ?? 'Download attachment'}</span>
     </a>
+  );
+}
+
+/** Centred pill used for system events and reaction notices. */
+function TimelineNote({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex justify-center py-1">
+      <span className="rounded-full bg-secondary/70 px-2.5 py-1 text-[11px] text-muted-foreground">
+        {children}
+      </span>
+    </div>
   );
 }
 
@@ -108,15 +135,29 @@ export function MessageThread({
     void markRead(conversationId);
   }, [conversationId, messages.length]);
 
+  let lastDay = '';
+
   return (
-    <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-6">
-      {messages.map((m) => {
+    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-5 py-6">
+      {messages.map((m, i) => {
+        const stamp = m.sentAt ?? m.createdAt;
+        const day = dayLabel(stamp);
+        const showDay = day !== lastDay;
+        if (showDay) lastDay = day;
+
+        const dayDivider = showDay ? (
+          <div key={`day-${m.id}`} className="flex items-center gap-3 py-4">
+            <div className="divider-fade h-px flex-1" />
+            <span className="text-[11px] font-medium text-muted-foreground">{day}</span>
+            <div className="divider-fade h-px flex-1" />
+          </div>
+        ) : null;
+
         if (m.authorType === 'system') {
           return (
-            <div key={m.id} className="flex justify-center">
-              <span className="rounded-full bg-secondary px-3 py-1 text-xs text-muted-foreground">
-                {m.body}
-              </span>
+            <div key={m.id}>
+              {dayDivider}
+              <TimelineNote>{m.body}</TimelineNote>
             </div>
           );
         }
@@ -125,11 +166,12 @@ export function MessageThread({
           const base = m.reactionType.replace('-', '');
           const removed = m.reactionType.startsWith('-');
           return (
-            <div key={m.id} className="flex justify-center">
-              <span className="text-xs text-muted-foreground">
+            <div key={m.id}>
+              {dayDivider}
+              <TimelineNote>
                 {m.authorName ?? (m.direction === 'inbound' ? 'Contact' : 'You')}{' '}
                 {removed ? 'removed a' : 'reacted'} {REACTION_EMOJI[base] ?? '👍'}
-              </span>
+              </TimelineNote>
             </div>
           );
         }
@@ -137,42 +179,91 @@ export function MessageThread({
         const isOutbound = m.direction === 'outbound';
         const isNote = m.isPrivateNote;
 
+        // Consecutive messages from the same side group together: tighter spacing
+        // and a squared-off corner on the joining edge, like iMessage.
+        const prev = messages[i - 1];
+        const next = messages[i + 1];
+        const sameAsPrev =
+          !showDay &&
+          prev &&
+          !prev.reactionType &&
+          prev.authorType !== 'system' &&
+          prev.direction === m.direction &&
+          prev.isPrivateNote === m.isPrivateNote;
+        const sameAsNext =
+          next &&
+          !next.reactionType &&
+          next.authorType !== 'system' &&
+          next.direction === m.direction &&
+          next.isPrivateNote === m.isPrivateNote;
+
         return (
-          <div
-            key={m.id}
-            className={cn('flex animate-fade-in flex-col', isOutbound ? 'items-end' : 'items-start')}
-          >
-            {isOutbound && m.authorName && !isNote && (
-              <span className="mb-0.5 px-1 text-[11px] text-muted-foreground">{m.authorName}</span>
-            )}
+          <div key={m.id}>
+            {dayDivider}
             <div
               className={cn(
-                'max-w-[78%] space-y-2 rounded-2xl px-3.5 py-2 text-sm shadow-sm',
-                isNote
-                  ? 'border border-warning/40 bg-warning/10 text-foreground'
-                  : isOutbound
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-secondary text-secondary-foreground',
+                'flex animate-bubble-in flex-col',
+                isOutbound ? 'items-end' : 'items-start',
+                sameAsPrev ? 'mt-0.5' : 'mt-3',
               )}
             >
-              {isNote && (
-                <p className="text-[10px] font-medium uppercase tracking-wide text-warning">
-                  Internal note
-                </p>
+              {isOutbound && m.authorName && !isNote && !sameAsPrev && (
+                <span className="mb-1 px-1 text-[11px] font-medium text-muted-foreground">
+                  {m.authorName}
+                </span>
               )}
-              {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
-              {m.attachments.map((a) => (
-                <AttachmentView key={a.id} att={a} />
-              ))}
-            </div>
-            <div
-              className={cn(
-                'mt-1 flex items-center gap-1 px-1 text-[11px] text-muted-foreground',
-                isOutbound ? 'flex-row-reverse' : '',
+
+              <div
+                className={cn(
+                  'max-w-[74%] space-y-2 px-3.5 py-2 text-[13.5px] leading-relaxed shadow-xs',
+                  // Rounded 18px everywhere, squared on the grouped edge.
+                  'rounded-[1.15rem]',
+                  isOutbound
+                    ? sameAsPrev && sameAsNext
+                      ? 'rounded-br-md rounded-tr-md'
+                      : sameAsPrev
+                        ? 'rounded-tr-md'
+                        : sameAsNext
+                          ? 'rounded-br-md'
+                          : ''
+                    : sameAsPrev && sameAsNext
+                      ? 'rounded-bl-md rounded-tl-md'
+                      : sameAsPrev
+                        ? 'rounded-tl-md'
+                        : sameAsNext
+                          ? 'rounded-bl-md'
+                          : '',
+                  isNote
+                    ? 'border border-warning/35 bg-warning-muted text-foreground'
+                    : isOutbound
+                      ? 'bg-brand text-brand-foreground shadow-brand/30'
+                      : 'bg-secondary text-secondary-foreground',
+                )}
+              >
+                {isNote && (
+                  <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-warning">
+                    <Lock className="h-2.5 w-2.5" />
+                    Internal note
+                  </p>
+                )}
+                {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+                {m.attachments.map((a) => (
+                  <AttachmentView key={a.id} att={a} onBubble={isOutbound && !isNote} />
+                ))}
+              </div>
+
+              {/* Timestamp only on the last message of a group — cuts visual noise a lot. */}
+              {!sameAsNext && (
+                <div
+                  className={cn(
+                    'mt-1 flex items-center gap-1 px-1 text-[10.5px] text-muted-foreground',
+                    isOutbound && 'flex-row-reverse',
+                  )}
+                >
+                  <span className="tabular">{clockTime(stamp)}</span>
+                  {isOutbound && <StatusTick message={m} />}
+                </div>
               )}
-            >
-              <span>{shortTime(m.sentAt ?? m.createdAt)}</span>
-              {isOutbound && <StatusTick message={m} />}
             </div>
           </div>
         );

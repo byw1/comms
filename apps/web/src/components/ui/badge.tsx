@@ -3,22 +3,36 @@ import { cva, type VariantProps } from 'class-variance-authority';
 
 import { cn } from '@/lib/utils';
 
+/*
+ * Status badges are read at a glance, in peripheral vision, dozens at a time.
+ * Tinted-background + saturated-text ("soft") variants stay legible at 11px
+ * without shouting the way solid fills do — reserve solid for counts only.
+ */
 const badgeVariants = cva(
-  'inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  'inline-flex items-center gap-1 whitespace-nowrap rounded-md border font-medium transition-colors duration-150',
   {
     variants: {
       variant: {
-        default:
-          'border-transparent bg-primary text-primary-foreground shadow hover:bg-primary/80',
-        secondary:
-          'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        destructive:
-          'border-transparent bg-destructive text-destructive-foreground shadow hover:bg-destructive/80',
-        outline: 'text-foreground',
+        default: 'border-transparent bg-primary text-primary-foreground',
+        brand: 'border-transparent bg-brand text-brand-foreground',
+        secondary: 'border-transparent bg-secondary text-secondary-foreground',
+        destructive: 'border-transparent bg-destructive text-destructive-foreground',
+        outline: 'border-border-strong text-muted-foreground',
+
+        // Soft variants — the default choice for status.
+        'soft-brand': 'border-brand-border/60 bg-brand-muted text-brand',
+        'soft-danger': 'border-destructive/25 bg-destructive-muted text-destructive',
+        'soft-success': 'border-success/25 bg-success-muted text-success',
+        'soft-warning': 'border-warning/30 bg-warning-muted text-warning',
+      },
+      size: {
+        default: 'px-2 py-0.5 text-xs',
+        sm: 'px-1.5 py-px text-[11px] leading-[1.35]',
       },
     },
     defaultVariants: {
       variant: 'default',
+      size: 'default',
     },
   },
 );
@@ -27,10 +41,8 @@ export interface BadgeProps
   extends React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof badgeVariants> {}
 
-function Badge({ className, variant, ...props }: BadgeProps) {
-  return (
-    <div className={cn(badgeVariants({ variant }), className)} {...props} />
-  );
+function Badge({ className, variant, size, ...props }: BadgeProps) {
+  return <div className={cn(badgeVariants({ variant, size }), className)} {...props} />;
 }
 
 export { Badge, badgeVariants };

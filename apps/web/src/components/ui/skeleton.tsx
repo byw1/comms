@@ -1,14 +1,12 @@
 import { cn } from '@/lib/utils';
 
-function Skeleton({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
+/**
+ * A sweeping sheen rather than a pulsing block — it reads as "loading" instead
+ * of "broken", and the movement direction hints that content flows in.
+ */
+function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div
-      className={cn('animate-pulse rounded-md bg-muted', className)}
-      {...props}
-    />
+    <div className={cn('skeleton-sheen rounded-md bg-muted/70', className)} {...props} />
   );
 }
 

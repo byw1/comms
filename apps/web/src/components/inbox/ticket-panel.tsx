@@ -3,7 +3,7 @@
 import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, AlertTriangle, Clock, Star } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   Select,
@@ -12,12 +12,46 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { updateConversation, toggleTag } from '@/server/actions/inbox';
 import { relativeTime } from '@/lib/format';
 import { cn, initials } from '@/lib/utils';
 
 const UNASSIGNED = '__unassigned__';
+
+const SENTIMENT_STYLE: Record<string, string> = {
+  positive: 'bg-success-muted text-success',
+  negative: 'bg-destructive-muted text-destructive',
+  neutral: 'bg-secondary text-muted-foreground',
+};
+
+function Section({
+  label,
+  children,
+  icon: Icon,
+}: {
+  label: string;
+  children: React.ReactNode;
+  icon?: React.ElementType;
+}) {
+  return (
+    <section className="border-t px-4 py-3.5 first:border-t-0">
+      <p className="mb-2.5 flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/70">
+        {Icon && <Icon className="h-3 w-3" />}
+        {label}
+      </p>
+      {children}
+    </section>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="shrink-0 text-[12.5px] text-muted-foreground">{label}</span>
+      <div className="w-[58%]">{children}</div>
+    </div>
+  );
+}
 
 export function TicketPanel({
   conversation,
@@ -56,134 +90,137 @@ export function TicketPanel({
     });
   }
 
+  const showSla = Boolean(sla?.slaBreachedAt || sla?.nextResponseDueAt || sla?.csatScore != null);
+
   return (
-    <aside className="flex w-72 shrink-0 flex-col gap-5 overflow-y-auto border-l bg-card p-4">
-      <section>
-        <div className="flex items-center gap-3">
-          <Avatar className="h-10 w-10">
-            <AvatarFallback>{initials(conversation.contactName)}</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <p className="truncate font-medium">{conversation.contactName}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {conversation.contactIdentities[0] ?? 'No contact info'}
-            </p>
-          </div>
+    <aside className="flex w-[288px] shrink-0 flex-col overflow-y-auto border-l bg-surface">
+      <div className="flex flex-col items-center gap-2.5 px-4 py-5 text-center">
+        <Avatar className="h-14 w-14 ring-1 ring-border">
+          <AvatarFallback className="bg-brand-muted text-base font-semibold text-brand">
+            {initials(conversation.contactName)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0">
+          <p className="truncate text-[14px] font-semibold tracking-[-0.01em]">
+            {conversation.contactName}
+          </p>
+          <p className="truncate font-mono text-[11.5px] text-muted-foreground">
+            {conversation.contactIdentities[0] ?? 'No contact info'}
+          </p>
         </div>
-      </section>
+      </div>
 
       {ai?.summary && (
-        <>
-          <Separator />
-          <section className="space-y-1.5">
-            <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              <Sparkles className="h-3 w-3" />
-              AI summary
-            </p>
-            <p className="text-sm">{ai.summary}</p>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {ai.topic && (
-                <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{ai.topic}</span>
-              )}
-              {ai.sentiment && (
-                <span className="rounded-full bg-secondary px-2 py-0.5 text-xs capitalize text-muted-foreground">
-                  {ai.sentiment}
-                </span>
-              )}
-            </div>
-          </section>
-        </>
+        <Section label="AI summary" icon={Sparkles}>
+          <div className="rounded-lg border border-brand-border/50 bg-brand-muted/60 p-2.5">
+            <p className="text-[12.5px] leading-relaxed">{ai.summary}</p>
+            {(ai.topic || ai.sentiment) && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {ai.topic && (
+                  <span className="rounded-md bg-surface/70 px-1.5 py-px text-[11px] font-medium">
+                    {ai.topic}
+                  </span>
+                )}
+                {ai.sentiment && (
+                  <span
+                    className={cn(
+                      'rounded-md px-1.5 py-px text-[11px] font-medium capitalize',
+                      SENTIMENT_STYLE[ai.sentiment] ?? 'bg-secondary text-muted-foreground',
+                    )}
+                  >
+                    {ai.sentiment}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </Section>
       )}
 
-      <Separator />
+      <Section label="Ticket">
+        <div className="space-y-2.5">
+          <Field label="Assignee">
+            <Select
+              value={conversation.assigneeId ?? UNASSIGNED}
+              onValueChange={(v) =>
+                run(() =>
+                  updateConversation({
+                    id: conversation.id,
+                    assigneeId: v === UNASSIGNED ? null : v,
+                  }),
+                )
+              }
+              disabled={pending}
+            >
+              <SelectTrigger className="h-8 text-[12.5px]">
+                <SelectValue placeholder="Unassigned" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                {agents.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name ?? a.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
 
-      <section className="space-y-3">
-        <Field label="Assignee">
-          <Select
-            value={conversation.assigneeId ?? UNASSIGNED}
-            onValueChange={(v) =>
-              run(() =>
-                updateConversation({
-                  id: conversation.id,
-                  assigneeId: v === UNASSIGNED ? null : v,
-                }),
-              )
-            }
-            disabled={pending}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Unassigned" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
-              {agents.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name ?? a.email}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
+          <Field label="Status">
+            <Select
+              value={conversation.status}
+              onValueChange={(v) =>
+                run(() =>
+                  updateConversation({
+                    id: conversation.id,
+                    status: v as 'open' | 'pending' | 'snoozed' | 'closed',
+                  }),
+                )
+              }
+              disabled={pending}
+            >
+              <SelectTrigger className="h-8 text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="open">Open</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="snoozed">Snoozed</SelectItem>
+                <SelectItem value="closed">Closed</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
 
-        <Field label="Status">
-          <Select
-            value={conversation.status}
-            onValueChange={(v) =>
-              run(() =>
-                updateConversation({
-                  id: conversation.id,
-                  status: v as 'open' | 'pending' | 'snoozed' | 'closed',
-                }),
-              )
-            }
-            disabled={pending}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="snoozed">Snoozed</SelectItem>
-              <SelectItem value="closed">Closed</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
+          <Field label="Priority">
+            <Select
+              value={conversation.priority}
+              onValueChange={(v) =>
+                run(() =>
+                  updateConversation({
+                    id: conversation.id,
+                    priority: v as 'low' | 'normal' | 'high' | 'urgent',
+                  }),
+                )
+              }
+              disabled={pending}
+            >
+              <SelectTrigger className="h-8 text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="normal">Normal</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="urgent">Urgent</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+      </Section>
 
-        <Field label="Priority">
-          <Select
-            value={conversation.priority}
-            onValueChange={(v) =>
-              run(() =>
-                updateConversation({
-                  id: conversation.id,
-                  priority: v as 'low' | 'normal' | 'high' | 'urgent',
-                }),
-              )
-            }
-            disabled={pending}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="low">Low</SelectItem>
-              <SelectItem value="normal">Normal</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="urgent">Urgent</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-      </section>
-
-      <Separator />
-
-      <section>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Tags
-        </p>
+      <Section label="Tags">
         {allTags.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No tags yet.</p>
+          <p className="text-[12px] text-muted-foreground">No tags yet.</p>
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {allTags.map((t) => {
@@ -194,8 +231,10 @@ export function TicketPanel({
                   disabled={pending}
                   onClick={() => run(() => toggleTag(conversation.id, t.id))}
                   className={cn(
-                    'rounded-full border px-2.5 py-1 text-xs transition-colors',
-                    active ? 'border-transparent' : 'border-border text-muted-foreground hover:bg-accent',
+                    'rounded-md border px-2 py-0.5 text-[11.5px] font-medium transition-all duration-150 active:scale-95',
+                    active
+                      ? 'border-transparent'
+                      : 'border-border text-muted-foreground hover:border-border-strong hover:bg-accent',
                   )}
                   style={active ? { backgroundColor: `${t.color}20`, color: t.color } : undefined}
                 >
@@ -205,45 +244,47 @@ export function TicketPanel({
             })}
           </div>
         )}
-      </section>
+      </Section>
 
-      {(sla?.slaBreachedAt || sla?.nextResponseDueAt || sla?.csatScore != null) && (
-        <>
-          <Separator />
-          <section className="space-y-1.5 text-xs">
-            {sla.slaBreachedAt ? (
-              <p className="font-medium text-destructive">SLA breached — response overdue</p>
-            ) : sla.nextResponseDueAt ? (
-              <p className="text-muted-foreground">
-                Response due{' '}
-                <span className="text-foreground">{relativeTime(sla.nextResponseDueAt)}</span>
-              </p>
+      {showSla && (
+        <Section label="Service level">
+          <div className="space-y-2">
+            {sla!.slaBreachedAt ? (
+              <div className="flex items-center gap-2 rounded-lg border border-destructive/25 bg-destructive-muted px-2.5 py-2 text-[12px] font-medium text-destructive">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                Response overdue
+              </div>
+            ) : sla!.nextResponseDueAt ? (
+              <div className="flex items-center gap-2 rounded-lg border bg-secondary/50 px-2.5 py-2 text-[12px] text-muted-foreground">
+                <Clock className="h-3.5 w-3.5 shrink-0" />
+                Due <span className="text-foreground">{relativeTime(sla!.nextResponseDueAt)}</span>
+              </div>
             ) : null}
-            {sla.csatScore != null && (
-              <p className="text-muted-foreground">
-                CSAT: <span className="text-foreground">{sla.csatScore}/5</span>
-              </p>
+            {sla!.csatScore != null && (
+              <div className="flex items-center gap-1.5 px-0.5 text-[12px] text-muted-foreground">
+                <span>Rating</span>
+                <span className="ml-auto flex items-center gap-0.5">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Star
+                      key={n}
+                      className={cn(
+                        'h-3 w-3',
+                        n <= sla!.csatScore!
+                          ? 'fill-warning text-warning'
+                          : 'text-muted-foreground/30',
+                      )}
+                    />
+                  ))}
+                </span>
+              </div>
             )}
-          </section>
-        </>
+          </div>
+        </Section>
       )}
 
-      <Separator />
-
-      <section className="text-xs text-muted-foreground">
-        <p>
-          Inbox: <span className="text-foreground">{conversation.inboxName}</span>
-        </p>
-      </section>
+      <Section label="Channel">
+        <p className="text-[12.5px]">{conversation.inboxName}</p>
+      </Section>
     </aside>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      {children}
-    </div>
   );
 }

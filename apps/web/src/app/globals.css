@@ -3,82 +3,135 @@
 @tailwind utilities;
 
 /*
- * Comms theme — clean, enterprise, black & white.
- * Light mode is near-white with true-black primary; dark mode is near-black.
+ * Comms design system.
+ *
+ * Monochrome base + a single indigo accent. The neutrals are very slightly cool
+ * (a touch of blue in the hue channel) which reads as "designed" rather than the
+ * dead 0% gray you get from stock shadcn. The accent is used sparingly: focus
+ * rings, active navigation, unread state, outbound message bubbles. Primary
+ * buttons stay near-black so the accent never loses its meaning.
  */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    /* Surfaces — layered light-to-dark so panes read as stacked, not tiled. */
+    --background: 240 20% 99%;
+    --surface: 0 0% 100%;
+    --surface-sunken: 240 16% 97%;
+
+    --foreground: 240 10% 8%;
 
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 240 10% 8%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
+    --popover-foreground: 240 10% 8%;
 
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
+    /* Primary stays near-black: high-contrast, neutral, timeless. */
+    --primary: 240 10% 8%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
+    --secondary: 240 14% 96%;
+    --secondary-foreground: 240 10% 12%;
 
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
+    --muted: 240 14% 96%;
+    --muted-foreground: 240 5% 46%;
 
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
+    --accent: 240 14% 95.5%;
+    --accent-foreground: 240 10% 12%;
+
+    /* The one accent. Restraint is the point — see usage note above. */
+    --brand: 245 78% 60%;
+    --brand-foreground: 0 0% 100%;
+    --brand-muted: 245 90% 97%;
+    --brand-border: 245 60% 88%;
 
     --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-muted: 0 86% 97%;
 
-    --success: 142 71% 45%;
-    --success-foreground: 0 0% 98%;
+    --success: 152 62% 40%;
+    --success-foreground: 0 0% 100%;
+    --success-muted: 152 60% 96%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 9%;
+    --warning: 32 94% 48%;
+    --warning-foreground: 0 0% 100%;
+    --warning-muted: 38 92% 96%;
 
-    --border: 0 0% 90%;
-    --input: 0 0% 90%;
-    --ring: 0 0% 3.9%;
+    --border: 240 12% 90%;
+    --border-strong: 240 10% 84%;
+    --input: 240 12% 89%;
+    --ring: 245 78% 60%;
 
-    --radius: 0.625rem;
+    --radius: 0.7rem;
+
+    /* Elevation. Multi-layer and low-alpha — one flat shadow reads cheap. */
+    --shadow-xs: 0 1px 2px -1px hsl(240 20% 12% / 0.06);
+    --shadow-sm:
+      0 1px 2px -1px hsl(240 20% 12% / 0.07), 0 1px 1px -1px hsl(240 20% 12% / 0.04);
+    --shadow-md:
+      0 4px 8px -3px hsl(240 20% 12% / 0.08), 0 2px 4px -2px hsl(240 20% 12% / 0.05);
+    --shadow-lg:
+      0 12px 24px -8px hsl(240 20% 12% / 0.12), 0 4px 8px -4px hsl(240 20% 12% / 0.06);
+    --shadow-xl:
+      0 24px 48px -12px hsl(240 20% 12% / 0.18), 0 8px 16px -8px hsl(240 20% 12% / 0.08);
+    --shadow-brand: 0 4px 14px -4px hsl(245 78% 60% / 0.35);
   }
 
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
+    /* Not pure black — a hint of blue keeps large dark areas from looking dead. */
+    --background: 240 12% 6%;
+    --surface: 240 11% 8.5%;
+    --surface-sunken: 240 12% 5%;
 
-    --card: 0 0% 6%;
-    --card-foreground: 0 0% 98%;
+    --foreground: 240 12% 96%;
 
-    --popover: 0 0% 6%;
-    --popover-foreground: 0 0% 98%;
+    --card: 240 11% 8.5%;
+    --card-foreground: 240 12% 96%;
 
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
+    --popover: 240 11% 10%;
+    --popover-foreground: 240 12% 96%;
 
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
+    --primary: 0 0% 100%;
+    --primary-foreground: 240 10% 8%;
 
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
+    --secondary: 240 8% 16%;
+    --secondary-foreground: 240 12% 96%;
 
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
+    --muted: 240 8% 15%;
+    --muted-foreground: 240 6% 61%;
 
-    --destructive: 0 62.8% 50%;
-    --destructive-foreground: 0 0% 98%;
+    --accent: 240 8% 17%;
+    --accent-foreground: 240 12% 96%;
 
-    --success: 142 70% 45%;
-    --success-foreground: 0 0% 9%;
+    /* Lifted and slightly desaturated so it doesn't vibrate on a dark ground. */
+    --brand: 245 90% 71%;
+    --brand-foreground: 240 10% 8%;
+    --brand-muted: 245 60% 16%;
+    --brand-border: 245 50% 30%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 9%;
+    --destructive: 0 72% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-muted: 0 60% 16%;
 
-    --border: 0 0% 14.9%;
-    --input: 0 0% 18%;
-    --ring: 0 0% 83.1%;
+    --success: 152 55% 50%;
+    --success-foreground: 240 10% 8%;
+    --success-muted: 152 45% 14%;
+
+    --warning: 38 92% 58%;
+    --warning-foreground: 240 10% 8%;
+    --warning-muted: 38 60% 15%;
+
+    --border: 240 8% 18%;
+    --border-strong: 240 8% 26%;
+    --input: 240 8% 20%;
+    --ring: 245 90% 71%;
+
+    --shadow-xs: 0 1px 2px -1px hsl(0 0% 0% / 0.4);
+    --shadow-sm: 0 1px 2px -1px hsl(0 0% 0% / 0.5), 0 1px 1px -1px hsl(0 0% 0% / 0.3);
+    --shadow-md: 0 4px 8px -3px hsl(0 0% 0% / 0.5), 0 2px 4px -2px hsl(0 0% 0% / 0.35);
+    --shadow-lg: 0 12px 24px -8px hsl(0 0% 0% / 0.6), 0 4px 8px -4px hsl(0 0% 0% / 0.4);
+    --shadow-xl: 0 24px 48px -12px hsl(0 0% 0% / 0.7), 0 8px 16px -8px hsl(0 0% 0% / 0.45);
+    --shadow-brand: 0 4px 14px -4px hsl(245 90% 71% / 0.35);
   }
 }
 
@@ -86,22 +139,90 @@
   * {
     @apply border-border;
   }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings:
-      'rlig' 1,
+      'cv02' 1,
+      'cv03' 1,
+      'cv04' 1,
       'calt' 1;
+    text-rendering: optimizeLegibility;
   }
 
-  /* Thin, unobtrusive scrollbars to match the clean aesthetic. */
+  /* Tabular figures everywhere numbers align in columns (times, counts, #1042). */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background-color: hsl(var(--brand) / 0.22);
+  }
+
+  /* One consistent focus treatment across every interactive element. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring/60 ring-offset-2 ring-offset-background;
+  }
+
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
   ::-webkit-scrollbar-thumb {
-    @apply rounded-full bg-border;
+    @apply rounded-full border-[3px] border-solid border-transparent bg-border-strong;
+    background-clip: content-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground/40;
+    @apply bg-muted-foreground/50;
+    background-clip: content-box;
+  }
+
+  /* Respect users who ask the OS to reduce motion. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Hairline that fades at both ends — softer than a full-bleed 1px border. */
+  .divider-fade {
+    background: linear-gradient(
+      to right,
+      transparent,
+      hsl(var(--border)) 15%,
+      hsl(var(--border)) 85%,
+      transparent
+    );
+  }
+
+  /* Loading placeholder sweep. */
+  .skeleton-sheen {
+    @apply relative overflow-hidden;
+  }
+  .skeleton-sheen::after {
+    @apply absolute inset-0;
+    content: '';
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--foreground) / 0.05),
+      transparent
+    );
+    animation: shimmer 1.8s infinite;
   }
 }
