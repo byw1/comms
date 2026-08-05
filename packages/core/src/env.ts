@@ -44,6 +44,13 @@ const schema = z.object({
   // Apple's iMessage throttling. Applied globally per BlueBubbles number.
   SEND_MIN_INTERVAL_MS: z.coerce.number().default(800),
 
+  // Hard send ceilings per connection (i.e. per Apple ID). Automated/high-volume
+  // sending from one consumer Apple ID risks silent delivery degradation and
+  // account bans (see the Sendblue/LoopMessage per-ID ceilings — low hundreds
+  // per day). Sends beyond the cap are delayed, not dropped. Set 0 to disable.
+  SEND_HOURLY_CAP: z.coerce.number().default(50),
+  SEND_DAILY_CAP: z.coerce.number().default(300),
+
   // SMTP (magic-link sign-in, invites, notifications). Optional.
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),

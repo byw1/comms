@@ -25,6 +25,42 @@ import { runAutomations } from './automations.js';
 
 const log = logger.child({ module: 'ingest' });
 
+/** Standard carrier opt-out / opt-in keywords (TCPA / CTIA). Exact match only. */
+const OPT_OUT_RE = /^\s*(stop|stopall|stop all|unsubscribe|cancel|end|quit|revoke)\s*$/i;
+const OPT_IN_RE = /^\s*(start|unstop|resume)\s*$/i;
+
+/**
+ * Honor STOP/START keywords from the contact. Sets/clears contacts.optedOutAt
+ * (the outbound processor refuses to send while it is set) and drops a system
+ * event into the timeline so agents can see why sending is blocked.
+ */
+async function handleOptKeywords(
+  conversationId: string,
+  contactId: string,
+  bodyText: string,
+): Promise<void> {
+  const db = getDb();
+  const isOut = OPT_OUT_RE.test(bodyText);
+  const isIn = !isOut && OPT_IN_RE.test(bodyText);
+  if (!isOut && !isIn) return;
+
+  await db
+    .update(contacts)
+    .set({ optedOutAt: isOut ? new Date() : null })
+    .where(eq(contacts.id, contactId));
+  await db.insert(messages).values({
+    conversationId,
+    direction: 'outbound',
+    authorType: 'system',
+    body: isOut
+      ? 'Contact opted out (STOP) — outbound messages are now blocked'
+      : 'Contact opted back in (START) — outbound messages re-enabled',
+    status: 'sent',
+    sentAt: new Date(),
+  });
+  log.info({ contactId, optedOut: isOut }, 'opt keyword processed');
+}
+
 /** Find-or-create a contact for an iMessage handle address. */
 async function resolveContact(address: string, displayName?: string | null): Promise<string> {
   const db = getDb();
@@ -251,6 +287,9 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
 
   // SLA clock / CSAT capture + per-message automations on every inbound message.
   if (isInbound) {
+    if (contactId && bb.text) {
+      await handleOptKeywords(conversation.id, contactId, bb.text).catch(() => {});
+    }
     await onInboundSlaCsat(conversation.id, conversation, bb.text).catch(() => {});
     await runAutomations('message_received', conversation.id, { bodyText: bb.text }).catch(() => {});
   }

@@ -2,7 +2,15 @@
 
 import { revalidatePath } from 'next/cache';
 import { eq, and, inArray } from '@comms/db';
-import { conversations, messages, conversationTags, users, notifications, inboxes } from '@comms/db';
+import {
+  conversations,
+  messages,
+  conversationTags,
+  users,
+  notifications,
+  inboxes,
+  contacts,
+} from '@comms/db';
 import { newTempGuid, enqueueOutbound, publishEvent } from '@comms/core';
 import { db } from '@/server/db';
 import { requireUser } from '@/lib/session';
@@ -64,6 +72,20 @@ export async function sendMessage(input: {
   const connection = await getConnectionForInbox(conv.inboxId);
   if (!input.isPrivateNote && !connection) {
     return { ok: false, error: 'This inbox has no connected channel.' };
+  }
+
+  // Respect STOP opt-outs at the door (the worker enforces this too).
+  if (!input.isPrivateNote && conv.contactId) {
+    const contact = await db.query.contacts.findFirst({
+      where: eq(contacts.id, conv.contactId),
+      columns: { optedOutAt: true },
+    });
+    if (contact?.optedOutAt) {
+      return {
+        ok: false,
+        error: 'This contact opted out (replied STOP). You can only message them again if they reply START.',
+      };
+    }
   }
 
   const [msg] = await db

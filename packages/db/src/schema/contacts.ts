@@ -1,4 +1,4 @@
-import { pgTable, text, jsonb, unique } from 'drizzle-orm/pg-core';
+import { pgTable, text, jsonb, timestamp, unique } from 'drizzle-orm/pg-core';
 import { genId, timestamps } from './_helpers.js';
 import { identityKind } from './enums.js';
 
@@ -11,6 +11,11 @@ export const contacts = pgTable('contacts', {
   notes: text('notes'),
   /** Arbitrary structured attributes shown on the contact panel. */
   attributes: jsonb('attributes').$type<Record<string, string>>().notNull().default({}),
+  /**
+   * Set when the contact replies STOP (or a synonym): outbound sends to them
+   * are blocked until they reply START. TCPA compliance — never bypass this.
+   */
+  optedOutAt: timestamp('opted_out_at', { withTimezone: true }),
   ...timestamps,
 });
 

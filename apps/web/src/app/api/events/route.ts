@@ -20,6 +20,10 @@ export async function GET(req: Request) {
 
       send({ type: 'ready' });
       unsubscribe = subscribeEvents((event) => {
+        // Personal events go only to their target user; everything else
+        // (messages, conversations, presence, connection status) is shared
+        // workspace state and broadcasts to every signed-in agent.
+        if (event.type === 'notification' && event.userId !== user.id) return;
         try {
           send(event);
         } catch {

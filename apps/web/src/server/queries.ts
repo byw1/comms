@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, asc, desc, eq, ilike, isNull, or } from '@comms/db';
+import { and, asc, desc, eq, ilike, isNull, or, sql } from '@comms/db';
 import {
   conversations,
   messages,
@@ -112,15 +112,51 @@ export async function listAutomationRules() {
   return db.query.automationRules.findMany({ orderBy: [asc(automationRules.sortOrder)] });
 }
 
+/** Sidebar counts as one SQL aggregate — replaces loading 1000 rows into Node. */
 export async function inboxCounts(currentUserId: string) {
-  const all = await db.query.conversations.findMany({
-    columns: { id: true, status: true, assigneeId: true },
-    limit: 1000,
-  });
+  const [row] = await db
+    .select({
+      open: sql<number>`count(*) filter (where ${conversations.status} = 'open')`,
+      mine: sql<number>`count(*) filter (where ${conversations.assigneeId} = ${currentUserId} and ${conversations.status} != 'closed')`,
+      unassigned: sql<number>`count(*) filter (where ${conversations.assigneeId} is null and ${conversations.status} != 'closed')`,
+      closed: sql<number>`count(*) filter (where ${conversations.status} = 'closed')`,
+    })
+    .from(conversations);
   return {
-    open: all.filter((c) => c.status === 'open').length,
-    mine: all.filter((c) => c.assigneeId === currentUserId && c.status !== 'closed').length,
-    unassigned: all.filter((c) => !c.assigneeId && c.status !== 'closed').length,
-    closed: all.filter((c) => c.status === 'closed').length,
+    open: Number(row?.open ?? 0),
+    mine: Number(row?.mine ?? 0),
+    unassigned: Number(row?.unassigned ?? 0),
+    closed: Number(row?.closed ?? 0),
   };
+}
+
+/**
+ * Connections that are down (status != connected) or silently stale (still
+ * marked connected but no heartbeat for 3+ minutes — the worker is dead or the
+ * Mac is asleep). Feeds the channel-health banner's initial state.
+ */
+export async function listUnhealthyConnections() {
+  const staleBefore = new Date(Date.now() - 3 * 60_000);
+  const rows = await db
+    .select({
+      connectionId: channelConnections.id,
+      status: channelConnections.status,
+      lastHeartbeatAt: channelConnections.lastHeartbeatAt,
+      inboxName: inboxes.name,
+    })
+    .from(channelConnections)
+    .innerJoin(inboxes, eq(channelConnections.inboxId, inboxes.id));
+
+  return rows
+    .filter(
+      (r) =>
+        r.status === 'error' ||
+        r.status === 'disconnected' ||
+        (r.status === 'connected' && (!r.lastHeartbeatAt || r.lastHeartbeatAt < staleBefore)),
+    )
+    .map((r) => ({
+      connectionId: r.connectionId,
+      inboxName: r.inboxName,
+      reason: (r.status === 'connected' ? 'stale' : 'error') as 'error' | 'stale',
+    }));
 }

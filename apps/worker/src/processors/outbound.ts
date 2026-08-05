@@ -1,23 +1,25 @@
-import type { Job } from 'bullmq';
+import { DelayedError, type Job } from 'bullmq';
 import {
   type OutboundJob,
   type BBSendMethod,
   getObjectBytes,
   publishEvent,
   awaitSendSlot,
+  takeSendQuota,
   loadConfig,
   logger,
 } from '@comms/core';
 import { getDb, eq } from '@comms/db';
-import { messages, conversations } from '@comms/db';
+import { messages, conversations, contacts } from '@comms/db';
 import { loadConnection } from '../lib/connection.js';
 import { withChatLock } from '../lib/lock.js';
 
 const log = logger.child({ module: 'outbound' });
 
-export async function processOutbound(job: Job<OutboundJob>): Promise<void> {
+export async function processOutbound(job: Job<OutboundJob>, token?: string): Promise<void> {
   const { messageId, connectionId } = job.data;
   const db = getDb();
+  const cfg = loadConfig();
 
   const msg = await db.query.messages.findFirst({
     where: eq(messages.id, messageId),
@@ -35,6 +37,41 @@ export async function processOutbound(job: Job<OutboundJob>): Promise<void> {
   });
   if (!conv) throw new Error(`conversation ${msg.conversationId} missing for outbound message`);
 
+  // TCPA guard: a contact who replied STOP is never messaged again until they
+  // reply START. Enforced here (not only in the UI) so no code path bypasses it.
+  if (conv.contactId) {
+    const contact = await db.query.contacts.findFirst({
+      where: eq(contacts.id, conv.contactId),
+      columns: { optedOutAt: true },
+    });
+    if (contact?.optedOutAt) {
+      await db
+        .update(messages)
+        .set({ status: 'failed', error: 'Contact has opted out (replied STOP). Send blocked.' })
+        .where(eq(messages.id, msg.id));
+      await publishEvent({
+        type: 'message.updated',
+        conversationId: conv.id,
+        inboxId: conv.inboxId,
+        messageId: msg.id,
+      });
+      log.warn({ messageId: msg.id }, 'send blocked: contact opted out');
+      return;
+    }
+  }
+
+  // Apple-ID protection: hard hourly/daily ceilings per connection. Over cap,
+  // the job parks itself until the window rolls over — delayed, never dropped.
+  const quota = await takeSendQuota(connectionId, cfg.SEND_HOURLY_CAP, cfg.SEND_DAILY_CAP);
+  if (!quota.allowed) {
+    log.warn(
+      { messageId: msg.id, scope: quota.scope, retryInMs: quota.retryInMs },
+      'send quota exhausted; delaying job',
+    );
+    await job.moveToDelayed(Date.now() + quota.retryInMs, token);
+    throw new DelayedError();
+  }
+
   const { client, connection } = await loadConnection(connectionId);
   const method: BBSendMethod = connection.capabilities?.privateApi ? 'private-api' : 'apple-script';
 
@@ -49,7 +86,7 @@ export async function processOutbound(job: Job<OutboundJob>): Promise<void> {
 
     try {
       // Pace sends per number to stay under Apple's iMessage throttling.
-      await awaitSendSlot(connectionId, loadConfig().SEND_MIN_INTERVAL_MS);
+      await awaitSendSlot(connectionId, cfg.SEND_MIN_INTERVAL_MS);
 
       const attachment = msg.attachments?.find((a) => a.storageKey);
       let providerGuid: string | undefined;

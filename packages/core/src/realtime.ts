@@ -27,20 +27,47 @@ export async function publishEvent(event: RealtimeEvent): Promise<void> {
 }
 
 /**
- * Subscribe to realtime events. Returns an unsubscribe function. Creates a
- * dedicated connection because a subscribed ioredis client can't run commands.
+ * Subscribe to realtime events. Returns an unsubscribe function.
+ *
+ * All subscribers in this process share ONE Redis connection: a subscribed
+ * ioredis client can't run commands, so it must be dedicated — but it does not
+ * need to be per-caller. The previous implementation opened a new Redis
+ * connection per SSE stream (i.e. per browser tab), which is a connection-count
+ * cliff on any managed Redis. The shared client lazily connects on the first
+ * subscriber and quits when the last one leaves.
  */
-export function subscribeEvents(handler: (event: RealtimeEvent) => void): () => void {
-  const sub = createRedis();
-  void sub.subscribe(RT_CHANNEL);
-  sub.on('message', (_channel, message) => {
+const handlers = new Set<(event: RealtimeEvent) => void>();
+let shared: ReturnType<typeof createRedis> | null = null;
+
+function ensureSharedSubscriber() {
+  if (shared) return;
+  shared = createRedis();
+  void shared.subscribe(RT_CHANNEL);
+  shared.on('message', (_channel, message) => {
+    let event: RealtimeEvent;
     try {
-      handler(JSON.parse(message) as RealtimeEvent);
+      event = JSON.parse(message) as RealtimeEvent;
     } catch {
-      // ignore malformed payloads
+      return; // malformed payload
+    }
+    for (const h of handlers) {
+      try {
+        h(event);
+      } catch {
+        // one bad handler must not break the fan-out
+      }
     }
   });
+}
+
+export function subscribeEvents(handler: (event: RealtimeEvent) => void): () => void {
+  ensureSharedSubscriber();
+  handlers.add(handler);
   return () => {
-    void sub.quit();
+    handlers.delete(handler);
+    if (handlers.size === 0 && shared) {
+      void shared.quit();
+      shared = null;
+    }
   };
 }

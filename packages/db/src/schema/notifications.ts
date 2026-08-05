@@ -3,7 +3,7 @@ import { genId, timestamps } from './_helpers.js';
 import { users } from './auth.js';
 import { conversations } from './conversations.js';
 
-export const notificationType = pgEnum('notification_type', ['mention', 'assignment']);
+export const notificationType = pgEnum('notification_type', ['mention', 'assignment', 'system']);
 
 /** A per-user notification (an @mention in a note, a ticket assigned to you, …). */
 export const notifications = pgTable(

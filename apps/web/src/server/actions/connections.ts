@@ -113,6 +113,101 @@ export async function connectBlueBubbles(input: {
   return { ok: true, connectionId: connection.id, privateApi, webhookRegistered };
 }
 
+/**
+ * Update a connection's server URL (and optionally its password) IN PLACE.
+ *
+ * This exists because tunnel URLs rotate (Cloudflare quick tunnels change on
+ * every BlueBubbles restart). Before this action the only path was
+ * connectBlueBubbles, which creates a brand-new inbox — duplicating the inbox
+ * and stranding all conversation history. Editing in place keeps the same
+ * inbox, conversations, and webhook secret; only the transport address moves.
+ */
+export async function updateConnectionServerUrl(input: {
+  connectionId: string;
+  serverUrl: string;
+  /** Optional: also rotate the password. Blank/omitted keeps the stored one. */
+  password?: string;
+}): Promise<{ ok: boolean; privateApi?: boolean; webhookRegistered?: boolean; error?: string }> {
+  await requireAdmin();
+  const cfg = loadConfig();
+
+  const conn = await db.query.channelConnections.findFirst({
+    where: eq(channelConnections.id, input.connectionId),
+  });
+  if (!conn) return { ok: false, error: 'Connection not found.' };
+
+  const serverUrl = input.serverUrl.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//.test(serverUrl)) {
+    return { ok: false, error: 'Server URL must start with http:// or https://' };
+  }
+  const password = input.password?.trim() || decryptSecret(conn.credentialsEncrypted, cfg.appSecret);
+
+  // 1. Verify the new address actually answers with these credentials before
+  //    touching the stored row — a typo must not take a working channel down.
+  const probe = new BlueBubblesClient({ serverUrl, password });
+  let privateApi = false;
+  let serverVersion: string | undefined;
+  let osVersion: string | undefined;
+  try {
+    const info = await probe.serverInfo();
+    privateApi = Boolean(info.private_api);
+    serverVersion = info.server_version;
+    osVersion = info.os_version;
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Could not reach BlueBubbles at the new URL: ${(err as Error).message}`,
+    };
+  }
+
+  // 2. Persist the move. Same row, same inbox, same webhook secret.
+  await db
+    .update(channelConnections)
+    .set({
+      serverUrl,
+      ...(input.password?.trim()
+        ? { credentialsEncrypted: encryptSecret(input.password.trim(), cfg.appSecret) }
+        : {}),
+      status: 'connected',
+      lastHeartbeatAt: new Date(),
+      lastError: null,
+      capabilities: { privateApi, serverVersion, macosVersion: osVersion },
+    })
+    .where(eq(channelConnections.id, conn.id));
+
+  // 3. Re-register the webhook against the new server. The old registration
+  //    lives on the old (dead) server, so deleting it is best-effort only.
+  let webhookRegistered = false;
+  try {
+    const existing = await probe.listWebhooks().catch(() => [] as { id: number | string; url: string }[]);
+    for (const hook of existing) {
+      if (hook.url?.includes(`/api/webhooks/bluebubbles/${conn.id}`)) {
+        await probe.deleteWebhook(hook.id).catch(() => {});
+      }
+    }
+    const url = `${cfg.appUrl}/api/webhooks/bluebubbles/${conn.id}?secret=${conn.webhookSecret}`;
+    const hook = await probe.registerWebhook(url, COMMS_WEBHOOK_EVENTS);
+    await db
+      .update(channelConnections)
+      .set({ providerWebhookId: String(hook.id) })
+      .where(eq(channelConnections.id, conn.id));
+    webhookRegistered = true;
+  } catch (err) {
+    log.warn({ err: (err as Error).message }, 'webhook re-registration after URL change failed');
+    await db
+      .update(channelConnections)
+      .set({ lastError: `Webhook registration failed: ${(err as Error).message}` })
+      .where(eq(channelConnections.id, conn.id));
+  }
+
+  // 4. Backfill anything missed while the old URL was dead.
+  await enqueueMaintenance({ type: 'backfill', connectionId: conn.id }).catch(() => {});
+  await enqueueMaintenance({ type: 'heartbeat', connectionId: conn.id }).catch(() => {});
+
+  revalidatePath('/settings/inboxes');
+  return { ok: true, privateApi, webhookRegistered };
+}
+
 /** Re-test a connection and refresh its capabilities. */
 export async function testConnection(
   connectionId: string,
