@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, timestamp, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, boolean, integer, timestamp, jsonb } from 'drizzle-orm/pg-core';
 import { genId, timestamps } from './_helpers.js';
 import { channelType, channelProvider, connectionStatus } from './enums.js';
 
@@ -45,6 +45,14 @@ export const channelConnections = pgTable('channel_connections', {
   webhookSecret: text('webhook_secret').notNull(),
   /** The webhook id returned by BlueBubbles, so we can update/delete it. */
   providerWebhookId: text('provider_webhook_id'),
+  /**
+   * Which COMMS_WEBHOOK_VERSION this connection is subscribed at. Re-POSTing
+   * an existing webhook URL is a silent no-op on the BlueBubbles side, so
+   * without this an existing install never picks up newly-added event types.
+   */
+  webhookVersion: integer('webhook_version').notNull().default(0),
+  /** Last successful contact sync from the Mac's address book. */
+  contactsSyncedAt: timestamp('contacts_synced_at', { withTimezone: true }),
   status: connectionStatus('status').notNull().default('pending'),
   capabilities: jsonb('capabilities')
     .$type<{

@@ -1,4 +1,5 @@
 import { pgTable, text, boolean, integer, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
+
 import { genId, timestamps } from './_helpers.js';
 import {
   messageDirection,
@@ -83,8 +84,25 @@ export const attachments = pgTable('attachments', {
   sizeBytes: integer('size_bytes'),
   width: integer('width'),
   height: integer('height'),
-  /** S3 object key once stored. Served to the UI via presigned URLs. */
+  /**
+   * Apple's Uniform Type Identifier. Unlike mimeType/fileName — which the
+   * BlueBubbles server rewrites during audio conversion — this is never
+   * mutated, so it's the only reliable voice-memo signal.
+   */
+  uti: text('uti'),
+  isVoiceMemo: boolean('is_voice_memo').notNull().default(false),
+  /** S3 object key for the original bytes, exactly as the Mac had them. */
   storageKey: text('storage_key'),
+  /**
+   * S3 key for a browser-playable rendition, when the original isn't (Apple's
+   * CAF format plays in no browser). Same object as `storageKey` when the
+   * original was already playable.
+   */
+  playableStorageKey: text('playable_storage_key'),
+  playableMimeType: text('playable_mime_type'),
+  /** Voice-memo transcript, from Apple's on-device text or a speech provider. */
+  transcript: text('transcript'),
+  transcriptSource: text('transcript_source'),
   status: attachmentStatus('status').notNull().default('pending'),
   ...timestamps,
 });

@@ -3,6 +3,7 @@ import type {
   BBServerInfo,
   BBMessage,
   BBChat,
+  BBContact,
   BBWebhook,
   BBReaction,
   BBSendMethod,
@@ -92,10 +93,12 @@ export class BlueBubblesClient {
       json?: unknown;
       body?: BodyInit;
       headers?: Record<string, string>;
+      /** Per-call override — a full contact dump needs far longer than 20s. */
+      timeoutMs?: number;
     } = {},
   ): Promise<T> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), init.timeoutMs ?? this.timeoutMs);
     try {
       const headers: Record<string, string> = { ...init.headers };
       let body = init.body;
@@ -255,6 +258,54 @@ export class BlueBubblesClient {
         sort: options.sort ?? 'ASC',
         with: (options.with ?? ['attachment', 'handle']).join(','),
       },
+    });
+  }
+
+  // ---- Contacts ----
+
+  /**
+   * Every contact the Mac knows about — its own database plus the macOS
+   * Address Book / iCloud. Slow with avatars (they're inlined as base64), so
+   * the timeout is raised well above the default.
+   *
+   * Returns `[...dbContacts, ...macContacts]` with NO cross-source dedup: the
+   * same person appears twice routinely. Dedupe by normalized address.
+   */
+  async listContacts(
+    options: { withAvatars?: boolean; timeoutMs?: number } = {},
+  ): Promise<BBContact[]> {
+    const result = await this.request<BBContact[]>('GET', 'contact', {
+      query: options.withAvatars ? { extraProperties: 'avatar' } : {},
+      timeoutMs: options.timeoutMs ?? 120_000,
+    });
+    return result ?? [];
+  }
+
+  /** Look up specific addresses — used to fetch avatars in batches. */
+  async queryContacts(
+    addresses: string[],
+    options: { withAvatars?: boolean; timeoutMs?: number } = {},
+  ): Promise<BBContact[]> {
+    const result = await this.request<BBContact[]>('POST', 'contact/query', {
+      json: {
+        addresses,
+        extraProperties: options.withAvatars ? ['avatar'] : [],
+      },
+      timeoutMs: options.timeoutMs ?? 60_000,
+    });
+    return result ?? [];
+  }
+
+  // ---- Single message ----
+
+  /**
+   * Refetch one message in full. Webhooks deliver a slimmed "notification"
+   * serialization that omits `attributedBody` — which is where Apple's
+   * on-device voice-memo transcript lives.
+   */
+  async getMessage(guid: string, options: { with?: string[] } = {}): Promise<BBMessage> {
+    return this.request<BBMessage>('GET', `message/${encodeURIComponent(guid)}`, {
+      query: { with: (options.with ?? ['attachment', 'attributedBody']).join(',') },
     });
   }
 

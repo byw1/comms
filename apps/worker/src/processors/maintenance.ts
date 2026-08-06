@@ -1,5 +1,14 @@
 import type { Job } from 'bullmq';
-import { type MaintenanceJob, publishEvent, logger } from '@comms/core';
+import {
+  type MaintenanceJob,
+  COMMS_WEBHOOK_EVENTS,
+  COMMS_WEBHOOK_VERSION,
+  enqueueMaintenance,
+  loadConfig,
+  publishEvent,
+  logger,
+} from '@comms/core';
+import { syncContacts } from '../lib/contacts.js';
 import { getDb, eq, and, lte, inArray, isNotNull } from '@comms/db';
 import {
   channelConnections,
@@ -43,7 +52,7 @@ async function heartbeat(connectionId: string) {
   // Read the prior status first so we only alert on transitions.
   const prior = await db.query.channelConnections.findFirst({
     where: eq(channelConnections.id, connectionId),
-    columns: { status: true, inboxId: true },
+    columns: { status: true, inboxId: true, webhookVersion: true, contactsSyncedAt: true },
   });
   try {
     const { client } = await loadConnection(connectionId);
@@ -70,6 +79,12 @@ async function heartbeat(connectionId: string) {
         prior.inboxId,
         'bridge recovered — messages are flowing again',
       ).catch(() => {});
+    }
+
+    // Self-heal a stale webhook subscription: an install created before an
+    // event type was added would otherwise never receive it.
+    if ((prior?.webhookVersion ?? 0) < COMMS_WEBHOOK_VERSION) {
+      await enqueueMaintenance({ type: 'reregister', connectionId }).catch(() => {});
     }
   } catch (err) {
     await db
@@ -195,11 +210,56 @@ async function unsnooze() {
   }
 }
 
+/**
+ * Delete and re-create the webhook. Needed after a URL change, and whenever
+ * COMMS_WEBHOOK_EVENTS grows — re-POSTing an existing webhook URL is a silent
+ * no-op on the BlueBubbles side, so old installs would never subscribe to
+ * newly-added event types.
+ */
+async function reregisterWebhook(connectionId: string) {
+  const db = getDb();
+  const { client, connection } = await loadConnection(connectionId);
+  const cfg = loadConfig();
+
+  const existing = await client.listWebhooks().catch(() => [] as { id: number | string; url: string }[]);
+  for (const hook of existing) {
+    if (hook.url?.includes(`/api/webhooks/bluebubbles/${connectionId}`)) {
+      await client.deleteWebhook(hook.id).catch(() => {});
+    }
+  }
+
+  const url = `${cfg.appUrl}/api/webhooks/bluebubbles/${connectionId}?secret=${connection.webhookSecret}`;
+  const hook = await client.registerWebhook(url, COMMS_WEBHOOK_EVENTS);
+  await db
+    .update(channelConnections)
+    .set({
+      providerWebhookId: String(hook.id),
+      webhookVersion: COMMS_WEBHOOK_VERSION,
+      lastError: null,
+    })
+    .where(eq(channelConnections.id, connectionId));
+  log.info({ connectionId, version: COMMS_WEBHOOK_VERSION }, 'webhook re-registered');
+}
+
+async function contactSync(connectionId: string) {
+  const result = await syncContacts(connectionId);
+  if (!result.macContactsVisible && result.fetched === 0) {
+    log.warn(
+      { connectionId },
+      'contact sync returned nothing — BlueBubbles may lack macOS Contacts permission',
+    );
+  }
+}
+
 export async function processMaintenance(job: Job<MaintenanceJob>): Promise<void> {
   const data = job.data;
   switch (data.type) {
     case 'heartbeat':
       return heartbeat(data.connectionId);
+    case 'reregister':
+      return reregisterWebhook(data.connectionId);
+    case 'contactSync':
+      return contactSync(data.connectionId);
     case 'backfill':
       return backfill(data.connectionId, data.since);
     case 'unsnooze':

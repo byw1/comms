@@ -51,6 +51,16 @@ const schema = z.object({
   SEND_HOURLY_CAP: z.coerce.number().default(50),
   SEND_DAILY_CAP: z.coerce.number().default(300),
 
+  // Voice-memo transcription. Optional and provider-agnostic: any
+  // OpenAI-compatible /audio/transcriptions endpoint works. Anthropic's API
+  // cannot accept audio, so this is necessarily a second provider. Unset means
+  // we still use Apple's free on-device transcript when the sender's device
+  // produced one — only the fallback is disabled.
+  TRANSCRIPTION_API_KEY: z.string().optional(),
+  TRANSCRIPTION_BASE_URL: z.string().default('https://api.groq.com/openai/v1'),
+  TRANSCRIPTION_MODEL: z.string().default('whisper-large-v3-turbo'),
+  TRANSCRIPTION_MAX_BYTES: z.coerce.number().default(24 * 1024 * 1024),
+
   // Undo-send: outbound messages sit in a delayed queue for this many seconds
   // before the worker picks them up, during which the sender can retract them.
   // 0 disables the window (sends dispatch immediately).
@@ -77,6 +87,7 @@ export interface AppConfig extends RawEnv {
   storageEnabled: boolean;
   smtpEnabled: boolean;
   aiEnabled: boolean;
+  transcriptionEnabled: boolean;
 }
 
 function resolveAppUrl(env: RawEnv): string {
@@ -131,6 +142,7 @@ export function loadConfig(requireRuntime = false): AppConfig {
     ),
     smtpEnabled: Boolean(env.SMTP_HOST && env.SMTP_FROM),
     aiEnabled: Boolean(env.ANTHROPIC_API_KEY),
+    transcriptionEnabled: Boolean(env.TRANSCRIPTION_API_KEY),
   };
   return cached;
 }

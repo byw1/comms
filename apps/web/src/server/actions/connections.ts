@@ -11,6 +11,7 @@ import {
   loadConfig,
   enqueueMaintenance,
   COMMS_WEBHOOK_EVENTS,
+  COMMS_WEBHOOK_VERSION,
   logger,
 } from '@comms/core';
 import { db } from '@/server/db';
@@ -81,6 +82,7 @@ export async function connectBlueBubbles(input: {
       webhookSecret,
       status: 'connected',
       lastHeartbeatAt: new Date(),
+      webhookVersion: COMMS_WEBHOOK_VERSION,
       capabilities: { privateApi, serverVersion, macosVersion: osVersion },
     })
     .returning();
@@ -104,9 +106,11 @@ export async function connectBlueBubbles(input: {
       .where(eq(channelConnections.id, connection.id));
   }
 
-  // 5. Kick off a history backfill + heartbeat.
+  // 5. Kick off a history backfill, heartbeat, and an initial contact sync so
+  //    conversations show real names instead of raw phone numbers.
   await enqueueMaintenance({ type: 'backfill', connectionId: connection.id }).catch(() => {});
   await enqueueMaintenance({ type: 'heartbeat', connectionId: connection.id }).catch(() => {});
+  await enqueueMaintenance({ type: 'contactSync', connectionId: connection.id }).catch(() => {});
 
   revalidatePath('/settings/inboxes');
   revalidatePath('/inbox');

@@ -1,6 +1,14 @@
 import type { Job } from 'bullmq';
-import { type InboundJob, type BBMessage, BB_EVENTS, publishEvent, logger } from '@comms/core';
-import { getDb, eq, and } from '@comms/db';
+import {
+  type InboundJob,
+  type BBMessage,
+  BB_EVENTS,
+  extractChatGuid,
+  enqueueMaintenance,
+  publishEvent,
+  logger,
+} from '@comms/core';
+import { getDb, eq, and, inArray } from '@comms/db';
 import { channelConnections, conversations, messages } from '@comms/db';
 import { ingestNewMessage, ingestUpdatedMessage } from '../lib/ingest.js';
 
@@ -58,17 +66,17 @@ async function recordChatEvent(
   });
 }
 
-/** BlueBubbles reports chat-scoped events with varying key names; try them all. */
-function chatGuidOf(payload: Record<string, unknown>): string | undefined {
-  return (payload.chatGuid ?? payload.guid ?? payload.chat_guid) as string | undefined;
-}
-
-/** Best-effort display name for whoever was added/removed from a group. */
+/**
+ * Best-effort display name for whoever was added/removed from a group. These
+ * events carry a serialized system Message, so the actor is on the message's
+ * handle; the body text is the last resort.
+ */
 function addressOf(payload: Record<string, unknown>): string {
+  const handle = payload.handle as { address?: string } | undefined;
   const raw =
+    handle?.address ??
     (payload.address as string | undefined) ??
-    ((payload.handle as { address?: string } | undefined)?.address ?? undefined) ??
-    (payload.updatedParticipant as string | undefined);
+    (payload.otherHandle as string | undefined);
   return raw ?? 'Someone';
 }
 
@@ -85,9 +93,44 @@ export async function processInbound(job: Job<InboundJob>): Promise<void> {
       await ingestUpdatedMessage(connectionId, data as BBMessage);
       return;
 
+    case BB_EVENTS.newServer: {
+      // The Mac's public URL rotated (Cloudflare quick tunnels change on every
+      // restart). BlueBubbles tells us the new one as a bare string — so the
+      // failure mode that used to silently kill the channel now self-heals.
+      const url = typeof data === 'string' ? data.trim() : '';
+      if (!/^https?:\/\//i.test(url)) {
+        log.warn({ data }, 'new-server event without a usable URL');
+        return;
+      }
+      const db = getDb();
+      const conn = await db.query.channelConnections.findFirst({
+        where: eq(channelConnections.id, connectionId),
+      });
+      if (!conn || conn.serverUrl === url.replace(/\/+$/, '')) return;
+
+      await db
+        .update(channelConnections)
+        .set({ serverUrl: url.replace(/\/+$/, ''), lastError: null, status: 'connected' })
+        .where(eq(channelConnections.id, connectionId));
+      log.info({ connectionId, url }, 'server URL auto-updated from new-server event');
+
+      // Re-register the webhook against the new address and backfill anything
+      // missed while the old one was dead.
+      await enqueueMaintenance({ type: 'reregister', connectionId }).catch(() => {});
+      await enqueueMaintenance({ type: 'backfill', connectionId }).catch(() => {});
+      await publishEvent({ type: 'connection.status', connectionId, status: 'connected' });
+      return;
+    }
+
+    case BB_EVENTS.serverUpdate:
+    case BB_EVENTS.helloWorld:
+      log.debug({ type }, 'informational BlueBubbles event');
+      return;
+
     case BB_EVENTS.messageSendError: {
       const bb = data as BBMessage;
-      if (bb.guid) {
+      // Shape isn't documented — guard rather than burning BullMQ retries.
+      if (typeof bb?.guid === 'string' && bb.guid) {
         const db = getDb();
         await db
           .update(messages)
@@ -99,7 +142,7 @@ export async function processInbound(job: Job<InboundJob>): Promise<void> {
     }
 
     case BB_EVENTS.typingIndicator: {
-      const found = await resolveConversation(connectionId, chatGuidOf(payload));
+      const found = await resolveConversation(connectionId, extractChatGuid(payload));
       if (found) {
         await publishEvent({
           type: 'typing',
@@ -112,13 +155,19 @@ export async function processInbound(job: Job<InboundJob>): Promise<void> {
     }
 
     case BB_EVENTS.groupNameChange: {
+      // Payload is a serialized system Message. The new title isn't in a
+      // documented field, so prefer the chat's own displayName and only patch
+      // conversations.title when we're confident — a wrong title is worse
+      // than a generic note.
+      const chats = payload.chats as Array<{ displayName?: string | null }> | undefined;
       const newName =
+        chats?.[0]?.displayName ??
+        (payload.groupTitle as string | undefined) ??
         (payload.newName as string | undefined) ??
-        (payload.displayName as string | undefined) ??
         null;
       await recordChatEvent(
         connectionId,
-        chatGuidOf(payload),
+        extractChatGuid(payload),
         newName ? `Group renamed to "${newName}"` : 'Group name changed',
         newName ? { title: newName } : undefined,
       );
@@ -128,7 +177,7 @@ export async function processInbound(job: Job<InboundJob>): Promise<void> {
     case BB_EVENTS.participantAdded:
       await recordChatEvent(
         connectionId,
-        chatGuidOf(payload),
+        extractChatGuid(payload),
         `${addressOf(payload)} was added to the group`,
       );
       return;
@@ -136,7 +185,7 @@ export async function processInbound(job: Job<InboundJob>): Promise<void> {
     case BB_EVENTS.participantRemoved:
       await recordChatEvent(
         connectionId,
-        chatGuidOf(payload),
+        extractChatGuid(payload),
         `${addressOf(payload)} was removed from the group`,
       );
       return;
@@ -144,7 +193,7 @@ export async function processInbound(job: Job<InboundJob>): Promise<void> {
     case BB_EVENTS.participantLeft:
       await recordChatEvent(
         connectionId,
-        chatGuidOf(payload),
+        extractChatGuid(payload),
         `${addressOf(payload)} left the group`,
       );
       return;
@@ -152,12 +201,14 @@ export async function processInbound(job: Job<InboundJob>): Promise<void> {
     case BB_EVENTS.chatReadStatusChanged: {
       // The customer opened the thread on their device. Mirror it so agents
       // aren't chasing someone who has already seen the reply.
-      const found = await resolveConversation(connectionId, chatGuidOf(payload));
+      const found = await resolveConversation(connectionId, extractChatGuid(payload));
       if (!found) return;
       const readOnTheirEnd = payload.read === true || payload.isRead === true;
       if (!readOnTheirEnd) return;
 
       const db = getDb();
+      // Include 'sent' as well as 'delivered': a message whose delivery
+      // receipt hasn't landed yet would otherwise never be marked read.
       await db
         .update(messages)
         .set({ status: 'read', readAt: new Date() })
@@ -165,7 +216,7 @@ export async function processInbound(job: Job<InboundJob>): Promise<void> {
           and(
             eq(messages.conversationId, found.conv.id),
             eq(messages.direction, 'outbound'),
-            eq(messages.status, 'delivered'),
+            inArray(messages.status, ['sent', 'delivered']),
           ),
         );
       await publishEvent({

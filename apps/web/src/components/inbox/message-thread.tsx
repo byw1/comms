@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Check, CheckCheck, Clock, Loader2, AlertCircle, Paperclip, Lock } from 'lucide-react';
+import { Check, CheckCheck, Clock, Loader2, AlertCircle, Paperclip, Lock, Mic } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { clockTime, dayLabel } from '@/lib/format';
 import { markRead } from '@/server/actions/inbox';
@@ -12,6 +12,11 @@ type Attachment = {
   fileName: string | null;
   mimeType: string | null;
   status: string;
+  isVoiceMemo?: boolean;
+  /** Null when no browser-playable rendition could be produced (e.g. raw CAF). */
+  playable?: boolean;
+  transcript?: string | null;
+  transcriptSource?: string | null;
 };
 
 export type ThreadMessage = {
@@ -72,6 +77,47 @@ function AttachmentView({ att, onBubble }: { att: Attachment; onBubble: boolean 
       >
         <Loader2 className="h-3 w-3 animate-spin" />
         {att.fileName ?? 'Attachment'} · downloading
+      </div>
+    );
+  }
+
+  // Voice memo: an inline player plus the transcript, which is the whole point
+  // — a voice message you can't skim is the worst thing to get in a queue.
+  if (att.isVoiceMemo) {
+    return (
+      <div className="space-y-1.5">
+        {att.playable ? (
+          <audio
+            controls
+            preload="metadata"
+            src={`/api/attachments/${att.id}?rendition=playable`}
+            className="h-9 w-full max-w-[280px]"
+          />
+        ) : (
+          <a
+            href={`/api/attachments/${att.id}`}
+            target="_blank"
+            rel="noreferrer"
+            className={cn(
+              'flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors',
+              onBubble ? 'border-white/20 hover:bg-white/10' : 'hover:bg-accent',
+            )}
+          >
+            <Mic className="h-3.5 w-3.5 shrink-0" />
+            Voice message — download to play
+          </a>
+        )}
+        {att.transcript && (
+          <p
+            className={cn(
+              'flex gap-1.5 text-[12.5px] italic leading-relaxed',
+              onBubble ? 'opacity-90' : 'text-muted-foreground',
+            )}
+          >
+            <Mic className="mt-[3px] h-3 w-3 shrink-0" />
+            <span className="not-italic">{att.transcript}</span>
+          </p>
+        )}
       </div>
     );
   }

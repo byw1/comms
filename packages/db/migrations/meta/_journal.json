@@ -43,6 +43,13 @@
       "when": 1785975330601,
       "tag": "0005_wandering_mantis",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786059610844,
+      "tag": "0006_neat_jean_grey",
+      "breakpoints": true
     }
   ]
 }

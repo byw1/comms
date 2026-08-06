@@ -78,6 +78,10 @@ async function main() {
       for (const c of conns) {
         await enqueueMaintenance({ type: 'heartbeat', connectionId: c.id });
         if (reconcile) await enqueueMaintenance({ type: 'backfill', connectionId: c.id });
+        // Address books change slowly — hourly is plenty.
+        if (tick % 60 === 0) {
+          await enqueueMaintenance({ type: 'contactSync', connectionId: c.id });
+        }
       }
     } catch (err) {
       log.warn({ err: (err as Error).message }, 'sweep failed');

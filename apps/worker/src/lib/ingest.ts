@@ -13,6 +13,7 @@ import {
   normalizeAddress,
   parseChatGuid,
   reactionFromAssociatedType,
+  isVoiceMemoAttachment,
   enqueueAttachment,
   enqueueAi,
   publishEvent,
@@ -148,6 +149,15 @@ async function ingestAttachments(connectionId: string, messageId: string, bb: BB
         providerAttachmentGuid: att.guid,
         fileName: att.transferName ?? null,
         mimeType: att.mimeType ?? null,
+        // The UTI is the only field the server doesn't rewrite during audio
+        // conversion — it's what makes voice-memo detection reliable.
+        uti: att.uti ?? null,
+        isVoiceMemo: isVoiceMemoAttachment({
+          uti: att.uti,
+          mimeType: att.mimeType,
+          fileName: att.transferName,
+          isAudioMessage: bb.isAudioMessage,
+        }),
         sizeBytes: att.totalBytes ?? null,
         width: att.width ?? null,
         height: att.height ?? null,
@@ -258,7 +268,15 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
   await ingestAttachments(connectionId, msg.id, bb);
 
   // Bump conversation denormalized fields. Inbound reopens a closed ticket.
-  const preview = bb.text?.slice(0, 280) ?? (bb.attachments?.length ? '📎 Attachment' : '');
+  const preview =
+    bb.text?.slice(0, 280) ||
+    (bb.attachments?.length
+      ? bb.attachments.some((a) =>
+          isVoiceMemoAttachment({ uti: a.uti, mimeType: a.mimeType, fileName: a.transferName }),
+        )
+        ? '🎤 Voice message'
+        : '📎 Attachment'
+      : '');
   const isInbound = !bb.isFromMe;
   await db
     .update(conversations)

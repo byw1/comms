@@ -40,7 +40,11 @@ export type MaintenanceJob =
   | { type: 'backfill'; connectionId: string; since?: number }
   | { type: 'heartbeat'; connectionId: string }
   | { type: 'unsnooze' }
-  | { type: 'sla' };
+  | { type: 'sla' }
+  /** Delete + re-create the webhook (after a URL change or event-list change). */
+  | { type: 'reregister'; connectionId: string }
+  /** Pull contacts (names + avatars) from the Mac's address book. */
+  | { type: 'contactSync'; connectionId: string };
 
 /**
  * Background AI work. `precompute` runs on every inbound message so the draft

@@ -84,6 +84,10 @@ export default async function ConversationPage({
               fileName: a.fileName,
               mimeType: a.mimeType,
               status: a.status,
+              isVoiceMemo: a.isVoiceMemo,
+              playable: Boolean(a.playableStorageKey),
+              transcript: a.transcript,
+              transcriptSource: a.transcriptSource,
             })),
           }))}
         />

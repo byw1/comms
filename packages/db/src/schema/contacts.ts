@@ -16,6 +16,10 @@ export const contacts = pgTable('contacts', {
    * are blocked until they reply START. TCPA compliance — never bypass this.
    */
   optedOutAt: timestamp('opted_out_at', { withTimezone: true }),
+  /** Last time the Mac's address book enriched this record. */
+  syncedAt: timestamp('synced_at', { withTimezone: true }),
+  /** S3 key for a synced address-book photo; served via /api/avatars/:id. */
+  avatarStorageKey: text('avatar_storage_key'),
   ...timestamps,
 });
 

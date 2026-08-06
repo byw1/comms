@@ -14,10 +14,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const { id } = await params;
   const att = await db.query.attachments.findFirst({ where: eq(attachments.id, id) });
-  if (!att || att.status !== 'stored' || !att.storageKey || !isStorageEnabled()) {
+  if (!att || att.status !== 'stored' || !isStorageEnabled()) {
     return new Response('Not found', { status: 404 });
   }
 
-  const url = await getPresignedUrl(att.storageKey, 3600);
+  // `?rendition=playable` serves the browser-playable copy of a voice memo;
+  // everything else gets the original bytes.
+  const wantPlayable = new URL(req.url).searchParams.get('rendition') === 'playable';
+  const key = wantPlayable ? (att.playableStorageKey ?? att.storageKey) : att.storageKey;
+  if (!key) return new Response('Not found', { status: 404 });
+
+  const url = await getPresignedUrl(key, 3600);
   return Response.redirect(url, 302);
 }
