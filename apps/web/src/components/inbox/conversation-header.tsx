@@ -11,11 +11,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { updateConversation } from '@/server/actions/inbox';
+import { updateConversation, setFollowUp } from '@/server/actions/inbox';
 import { PresenceBar } from '@/components/inbox/presence-bar';
-import { SNOOZE_PRESETS } from '@/lib/snooze';
+import { SNOOZE_PRESETS, FOLLOW_UP_PRESETS } from '@/lib/snooze';
 import { cn } from '@/lib/utils';
 
 /** Status is a dot + label rather than a filled chip — quieter in a header. */
@@ -62,6 +63,19 @@ export function ConversationHeader({
       } else {
         router.refresh();
       }
+    });
+  }
+
+  /**
+   * A follow-up doesn't change status — it just arms a reminder that resolves
+   * itself silently if the customer writes back.
+   */
+  function followUp(until: Date, label: string) {
+    setSnoozeOpen(false);
+    start(async () => {
+      const res = await setFollowUp(conversationId, until.toISOString());
+      if (!res.ok) toast.error(res.error);
+      else toast.success(`We'll bump this ${label.toLowerCase()} if they don't reply`);
     });
   }
 
@@ -137,6 +151,16 @@ export function ConversationHeader({
                   </DropdownMenuItem>
                 );
               })}
+
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                Remind me if no reply…
+              </DropdownMenuLabel>
+              {FOLLOW_UP_PRESETS.map((p) => (
+                <DropdownMenuItem key={p.key} onClick={() => followUp(p.until(), p.label)}>
+                  {p.label}
+                </DropdownMenuItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
         )}

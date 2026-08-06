@@ -12,6 +12,16 @@ function at(base: Date, hour: number): Date {
   return d;
 }
 
+/**
+ * "Bump this back to me if they haven't replied." Longer horizons than snooze
+ * — you're waiting on someone else, not parking your own work.
+ */
+export const FOLLOW_UP_PRESETS: SnoozePreset[] = [
+  { key: 'fu1d', label: 'in 1 day', until: () => new Date(Date.now() + 24 * 3600_000) },
+  { key: 'fu3d', label: 'in 3 days', until: () => new Date(Date.now() + 3 * 24 * 3600_000) },
+  { key: 'fu1w', label: 'in 1 week', until: () => new Date(Date.now() + 7 * 24 * 3600_000) },
+];
+
 /** "Send later" options — deliberately business-hours friendly. */
 export const SEND_LATER_PRESETS: SnoozePreset[] = [
   { key: 'in1h', label: 'In 1 hour', until: () => new Date(Date.now() + 3600_000) },

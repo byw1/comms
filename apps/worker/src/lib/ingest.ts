@@ -292,6 +292,10 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
     }
     await onInboundSlaCsat(conversation.id, conversation, bb.text).catch(() => {});
     await runAutomations('message_received', conversation.id, { bodyText: bb.text }).catch(() => {});
+    // Have a draft + summary waiting before an agent ever opens this.
+    if (isAiEnabled()) {
+      await enqueueAi({ type: 'precompute', conversationId: conversation.id }).catch(() => {});
+    }
   }
 
   // For a brand-new conversation: run new-conversation automations, then

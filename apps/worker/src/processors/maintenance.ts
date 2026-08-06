@@ -1,7 +1,14 @@
 import type { Job } from 'bullmq';
 import { type MaintenanceJob, publishEvent, logger } from '@comms/core';
-import { getDb, eq, and, lte, inArray } from '@comms/db';
-import { channelConnections, conversations, inboxes, notifications, users } from '@comms/db';
+import { getDb, eq, and, lte, inArray, isNotNull } from '@comms/db';
+import {
+  channelConnections,
+  conversations,
+  inboxes,
+  messages,
+  notifications,
+  users,
+} from '@comms/db';
 import { loadConnection } from '../lib/connection.js';
 import { ingestNewMessage } from '../lib/ingest.js';
 import { checkSlaBreaches } from '../lib/sla.js';
@@ -113,6 +120,63 @@ async function backfill(connectionId: string, since?: number) {
     .where(eq(channelConnections.id, connectionId));
 }
 
+/**
+ * Follow-up reminders: resurface conversations the customer never replied to.
+ *
+ * The distinction from a snooze is the whole point — if `lastInboundAt` moved
+ * past `followUpArmedAt`, the customer DID reply, so the reminder resolves
+ * silently. You're only ever interrupted about actual silence.
+ */
+async function followUps() {
+  const db = getDb();
+  const due = await db
+    .update(conversations)
+    .set({ followUpAt: null, followUpArmedAt: null })
+    .where(and(isNotNull(conversations.followUpAt), lte(conversations.followUpAt, new Date())))
+    .returning({
+      id: conversations.id,
+      inboxId: conversations.inboxId,
+      number: conversations.number,
+      status: conversations.status,
+      lastInboundAt: conversations.lastInboundAt,
+      armedAt: conversations.followUpArmedAt,
+      userId: conversations.followUpUserId,
+    });
+
+  for (const c of due) {
+    const customerReplied =
+      c.lastInboundAt && c.armedAt && c.lastInboundAt.getTime() > c.armedAt.getTime();
+    if (customerReplied) continue; // resolved itself — stay quiet
+
+    if (c.status === 'closed' || c.status === 'snoozed') {
+      await db
+        .update(conversations)
+        .set({ status: 'open', snoozedUntil: null })
+        .where(eq(conversations.id, c.id));
+    }
+
+    await db.insert(messages).values({
+      conversationId: c.id,
+      direction: 'outbound',
+      authorType: 'system',
+      body: 'Follow-up reminder — the customer never replied',
+      status: 'sent',
+      sentAt: new Date(),
+    });
+
+    if (c.userId) {
+      await db.insert(notifications).values({
+        userId: c.userId,
+        type: 'assignment',
+        conversationId: c.id,
+        body: `No reply yet on #${c.number} — time to follow up`,
+      });
+      await publishEvent({ type: 'notification', userId: c.userId });
+    }
+    await publishEvent({ type: 'conversation.updated', conversationId: c.id, inboxId: c.inboxId });
+  }
+}
+
 async function unsnooze() {
   const db = getDb();
   const due = await db
@@ -139,7 +203,9 @@ export async function processMaintenance(job: Job<MaintenanceJob>): Promise<void
     case 'backfill':
       return backfill(data.connectionId, data.since);
     case 'unsnooze':
-      return unsnooze();
+      // Same tick: due snoozes wake, due follow-ups resurface.
+      await unsnooze();
+      return followUps();
     case 'sla':
       return checkSlaBreaches();
   }

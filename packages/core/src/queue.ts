@@ -42,8 +42,14 @@ export type MaintenanceJob =
   | { type: 'unsnooze' }
   | { type: 'sla' };
 
-/** Background AI work (auto-triage of a conversation, etc.). */
-export type AiJob = { type: 'triage'; conversationId: string };
+/**
+ * Background AI work. `precompute` runs on every inbound message so the draft
+ * reply and catch-up summary are already waiting when an agent opens the
+ * conversation — the difference between "click and wait" and Tab-to-accept.
+ */
+export type AiJob =
+  | { type: 'triage'; conversationId: string }
+  | { type: 'precompute'; conversationId: string };
 
 // ---- Queue singletons -------------------------------------------------------
 

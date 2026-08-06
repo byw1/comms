@@ -364,6 +364,28 @@ export async function bulkUpdateConversations(
   return { ok: true };
 }
 
+/**
+ * Arm a follow-up reminder: "bump this back to me at T if the customer hasn't
+ * replied." Passing null cancels it. Distinct from snooze — see the worker's
+ * followUps sweep.
+ */
+export async function setFollowUp(
+  conversationId: string,
+  at: string | null,
+): Promise<ActionResult> {
+  const user = await requireUser();
+  await db
+    .update(conversations)
+    .set({
+      followUpAt: at ? new Date(at) : null,
+      followUpArmedAt: at ? new Date() : null,
+      followUpUserId: at ? user.id : null,
+    })
+    .where(eq(conversations.id, conversationId));
+  revalidatePath(`/inbox/${conversationId}`);
+  return { ok: true };
+}
+
 /** Mark a conversation read (clears the unread badge in Comms). */
 export async function markRead(conversationId: string): Promise<ActionResult> {
   await requireUser();
