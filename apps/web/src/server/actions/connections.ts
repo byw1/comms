@@ -208,6 +208,87 @@ export async function updateConnectionServerUrl(input: {
   return { ok: true, privateApi, webhookRegistered };
 }
 
+export type VerifyResult =
+  | { ok: true; privateApi: boolean; serverVersion?: string; macosVersion?: string }
+  | { ok: false; problem: 'url' | 'password' | 'unreachable' | 'timeout'; message: string; hint: string };
+
+/**
+ * Check a URL + password WITHOUT saving anything, and translate whatever went
+ * wrong into something a non-technical person can act on. Used by the guided
+ * setup so step 6 can say "that password doesn't match" instead of surfacing a
+ * raw HTTP error.
+ */
+export async function verifyBlueBubbles(input: {
+  serverUrl: string;
+  password: string;
+}): Promise<VerifyResult> {
+  await requireAdmin();
+
+  const serverUrl = input.serverUrl.trim().replace(/\/+$/, '');
+  const password = input.password.trim();
+
+  if (!serverUrl) {
+    return {
+      ok: false,
+      problem: 'url',
+      message: 'You need to paste the web address first.',
+      hint: 'In BlueBubbles on your Mac, look for the address under the connection settings — it usually ends in .trycloudflare.com or .ngrok.io',
+    };
+  }
+  if (!/^https?:\/\//i.test(serverUrl)) {
+    return {
+      ok: false,
+      problem: 'url',
+      message: 'That address is missing the https:// at the front.',
+      hint: `Try using: https://${serverUrl.replace(/^\/+/, '')}`,
+    };
+  }
+  if (!password) {
+    return {
+      ok: false,
+      problem: 'password',
+      message: 'You need to enter your BlueBubbles password.',
+      hint: 'This is the password you chose inside the BlueBubbles app on your Mac — not your Apple ID password.',
+    };
+  }
+
+  try {
+    const info = await new BlueBubblesClient({ serverUrl, password, timeoutMs: 12_000 }).serverInfo();
+    return {
+      ok: true,
+      privateApi: Boolean(info.private_api),
+      serverVersion: info.server_version,
+      macosVersion: info.os_version,
+    };
+  } catch (err) {
+    const raw = (err as Error).message ?? '';
+    const status = (err as { status?: number }).status;
+
+    if (status === 401 || status === 403 || /unauthor|forbidden|password/i.test(raw)) {
+      return {
+        ok: false,
+        problem: 'password',
+        message: "That password doesn't match the one on your Mac.",
+        hint: 'Open BlueBubbles on your Mac and check the password field. Watch for autocorrect capitalising the first letter.',
+      };
+    }
+    if (status === 408 || /timed out|timeout|abort/i.test(raw)) {
+      return {
+        ok: false,
+        problem: 'timeout',
+        message: 'Your Mac took too long to answer.',
+        hint: 'Is the Mac awake and connected to the internet? Wake it up, make sure BlueBubbles is running, then try again.',
+      };
+    }
+    return {
+      ok: false,
+      problem: 'unreachable',
+      message: "We couldn't reach your Mac at that address.",
+      hint: 'Two usual causes: the address changed when BlueBubbles restarted (copy the current one), or the Mac is asleep. Check that BlueBubbles is open and shows a green/connected status.',
+    };
+  }
+}
+
 /** Re-test a connection and refresh its capabilities. */
 export async function testConnection(
   connectionId: string,

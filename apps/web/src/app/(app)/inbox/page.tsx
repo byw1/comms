@@ -42,11 +42,11 @@ export default async function InboxEmptyPage() {
             </div>
             <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Connect your iMessage</h2>
             <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-              Comms talks to iMessage through a BlueBubbles server running on your Mac. Connect it to
-              start receiving messages.
+              Comms works through a Mac you leave running. We&apos;ll walk you through it step by
+              step — about fifteen minutes, no technical experience needed.
             </p>
-            <Button asChild variant="brand" className="mt-5">
-              <Link href="/settings/inboxes">Connect BlueBubbles</Link>
+            <Button asChild className="mt-5">
+              <Link href="/settings/inboxes/setup">Start guided setup</Link>
             </Button>
           </>
         )}

@@ -51,9 +51,10 @@ export function ConnectBlueBubbles({ hasExisting = false }: { hasExisting?: bool
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
-          <Plus className="mr-1.5 h-4 w-4" />
-          {hasExisting ? 'Connect another number' : 'Connect BlueBubbles'}
+        {/* The guided setup is the front door; this is the shortcut for people
+            who already have BlueBubbles running and just want the two fields. */}
+        <Button variant="ghost">
+          {hasExisting ? 'Connect another number' : 'I already have BlueBubbles set up'}
         </Button>
       </DialogTrigger>
       <DialogContent>

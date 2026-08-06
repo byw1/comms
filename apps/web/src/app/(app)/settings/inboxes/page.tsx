@@ -1,4 +1,7 @@
+import Link from 'next/link';
+import { Plus } from 'lucide-react';
 import { listInboxes } from '@/server/queries';
+import { Button } from '@/components/ui/button';
 import { ConnectBlueBubbles } from '@/components/settings/connect-bluebubbles';
 import { ConnectionCard } from '@/components/settings/connection-card';
 import { InboxSettings } from '@/components/settings/inbox-settings';
@@ -18,14 +21,27 @@ export default async function InboxesSettingsPage() {
             filter by in the inbox.
           </p>
         </div>
-        <ConnectBlueBubbles hasExisting={inboxes.length > 0} />
+        <Button asChild>
+          <Link href="/settings/inboxes/setup">
+            <Plus className="h-4 w-4" />
+            {inboxes.length > 0 ? 'Connect another number' : 'Connect iMessage'}
+          </Link>
+        </Button>
       </div>
 
       {inboxes.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-10 text-center">
-          <p className="text-sm text-muted-foreground">
-            No channels connected yet. Connect a BlueBubbles server to start receiving iMessages.
+        <div className="rounded-xl border border-dashed p-8 text-center">
+          <p className="text-[15px] font-medium">No numbers connected yet</p>
+          <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">
+            Comms connects to iMessage through a Mac you leave running. Our step-by-step guide walks
+            you through it — no technical experience needed, about fifteen minutes.
           </p>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <Button asChild>
+              <Link href="/settings/inboxes/setup">Start the guided setup</Link>
+            </Button>
+            <ConnectBlueBubbles hasExisting={false} />
+          </div>
         </div>
       ) : (
         <div className="space-y-4">
