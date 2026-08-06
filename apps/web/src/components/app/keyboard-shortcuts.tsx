@@ -91,6 +91,11 @@ export function KeyboardShortcuts() {
           e.preventDefault();
           window.dispatchEvent(new Event('comms:focus-composer'));
           break;
+        case 't':
+          if (!activeId) return;
+          e.preventDefault();
+          window.dispatchEvent(new Event('comms:tag-open'));
+          break;
         case '?':
           e.preventDefault();
           setHelpOpen((o) => !o);
@@ -107,7 +112,10 @@ export function KeyboardShortcuts() {
     { keys: ['k', '↑'], label: 'Previous conversation' },
     { keys: ['e'], label: 'Close and advance' },
     { keys: ['s'], label: 'Snooze…' },
+    { keys: ['t'], label: 'Tag conversation…' },
     { keys: ['r'], label: 'Reply (focus composer)' },
+    { keys: ['/'], label: 'Macros (in composer)' },
+    { keys: ['⇥'], label: 'Accept AI draft (in composer)' },
     { keys: ['↵'], label: 'Send message' },
     { keys: ['⇧', '↵'], label: 'New line' },
     { keys: ['⌘', 'K'], label: 'Search / command palette' },

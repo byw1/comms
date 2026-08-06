@@ -1,28 +1,46 @@
 'use client';
 
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { Send, Zap, StickyNote, CornerDownLeft } from 'lucide-react';
+import { toast } from 'sonner';
+import { Send, Zap, StickyNote, CornerDownLeft, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { AnimatePresence, motion } from '@/components/ui/motion';
 import { AiAssist } from '@/components/inbox/ai-assist';
+import {
+  MacroPicker,
+  useMacroPickerState,
+  type MacroOption,
+} from '@/components/inbox/macro-picker';
+import { applyMacro } from '@/server/actions/macros';
+import { SEND_LATER_PRESETS } from '@/lib/snooze';
 import { cn } from '@/lib/utils';
 
 export function Composer({
   conversationId,
   macros,
   aiEnabled,
+  aiDraft,
   onSubmit,
 }: {
   conversationId: string;
-  macros: { id: string; name: string; body: string }[];
+  macros: MacroOption[];
   aiEnabled: boolean;
+  /** Pre-computed suggestion shown as ghost text; Tab accepts it. */
+  aiDraft?: string | null;
   /**
    * Owns the actual send (optimistic append + server action + undo toast).
    * Returns false on failure so the composer can restore the draft.
    */
-  onSubmit: (body: string, isNote: boolean) => Promise<boolean>;
+  onSubmit: (body: string, isNote: boolean, scheduledFor?: Date) => Promise<boolean>;
 }) {
   const [body, setBody] = useState('');
   const [isNote, setIsNote] = useState(false);
@@ -30,6 +48,7 @@ export function Composer({
   const [pending, start] = useTransition();
   const ref = useRef<HTMLTextAreaElement>(null);
   const lastTypingPing = useRef(0);
+  const picker = useMacroPickerState(macros, body);
 
   // The global `r` shortcut focuses the composer from anywhere in the thread.
   useEffect(() => {
@@ -59,33 +78,90 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
   }, [body]);
 
-  function submit() {
+  function submit(scheduledFor?: Date) {
     const trimmed = body.trim();
     if (!trimmed) return;
     // Optimistic: clear the field immediately — the shell shows the bubble.
     setBody('');
     start(async () => {
-      const ok = await onSubmit(trimmed, isNote);
+      const ok = await onSubmit(trimmed, isNote, scheduledFor);
       if (!ok) setBody(trimmed); // restore the draft on failure
     });
   }
 
+  /** Insert a macro: render its variables server-side and run its actions. */
+  function pickMacro(m: MacroOption) {
+    start(async () => {
+      const res = await applyMacro({ macroId: m.id, conversationId });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      setBody((b) => {
+        // Slash-invoked macros replace the "/query"; button-invoked ones append.
+        const base = /^\/[\w-]*$/.test(b) ? '' : b;
+        return base ? `${base}\n${res.body}` : res.body;
+      });
+      if (res.appliedActions.length > 0) {
+        toast.success(`Macro applied — ${res.appliedActions.join(', ')}`);
+      }
+      ref.current?.focus();
+    });
+  }
+
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // While the slash picker is open it owns the arrows, Enter and Tab.
+    if (picker.open) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        picker.setActiveIndex(Math.min(picker.activeIndex + 1, picker.filtered.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        picker.setActiveIndex(Math.max(picker.activeIndex - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const chosen = picker.filtered[picker.activeIndex];
+        if (chosen) pickMacro(chosen);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setBody('');
+        return;
+      }
+    }
+
+    // Tab accepts the pre-computed AI draft when the field is empty.
+    if (e.key === 'Tab' && !e.shiftKey && aiDraft && !body.trim()) {
+      e.preventDefault();
+      setBody(aiDraft);
+      return;
+    }
+
     if (e.key === 'Enter' && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       submit();
     }
   }
 
-  function insertMacro(text: string) {
-    setBody((b) => (b ? `${b}\n${text}` : text));
-    ref.current?.focus();
-  }
-
   const canSend = Boolean(body.trim()) && !pending;
 
   return (
     <div className="px-3 pb-3 pt-1">
+      {picker.open && (
+        <MacroPicker
+          macros={macros}
+          query={picker.query}
+          onPick={pickMacro}
+          onDismiss={() => undefined}
+          activeIndex={picker.activeIndex}
+          setActiveIndex={picker.setActiveIndex}
+        />
+      )}
       {/* One bordered surface containing toolbar + field + send, so the composer
           reads as a single object rather than three stacked strips. */}
       <div
@@ -149,14 +225,30 @@ export function Composer({
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-80 p-1">
+                  <p className="px-2.5 py-1.5 text-[10.5px] text-muted-foreground">
+                    Tip: type <kbd className="rounded border bg-secondary px-1">/</kbd> in the
+                    composer to search macros without leaving the keyboard.
+                  </p>
                   <div className="max-h-72 overflow-y-auto">
                     {macros.map((m) => (
                       <button
                         key={m.id}
-                        onClick={() => insertMacro(m.body)}
+                        onClick={() => pickMacro(m)}
                         className="flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent"
                       >
-                        <span className="text-[13px] font-medium">{m.name}</span>
+                        <span className="flex w-full items-center gap-1.5">
+                          <span className="text-[13px] font-medium">{m.name}</span>
+                          {m.shortcut && (
+                            <span className="rounded bg-secondary px-1 font-mono text-[10px] text-muted-foreground">
+                              /{m.shortcut}
+                            </span>
+                          )}
+                          {m.hasActions && (
+                            <span className="ml-auto rounded bg-secondary px-1.5 text-[10px] text-muted-foreground">
+                              + actions
+                            </span>
+                          )}
+                        </span>
                         <span className="line-clamp-2 text-[11.5px] leading-snug text-muted-foreground">
                           {m.body}
                         </span>
@@ -177,7 +269,13 @@ export function Composer({
             onKeyDown={onKeyDown}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            placeholder={isNote ? 'Write an internal note — the customer never sees this…' : 'Type a message…'}
+            placeholder={
+              isNote
+                ? 'Write an internal note — the customer never sees this…'
+                : aiDraft
+                  ? 'Type a message…  ⇥ to accept the suggested reply'
+                  : 'Type a message…  /  for macros'
+            }
             className="max-h-[180px] min-h-[38px] resize-none border-0 bg-transparent px-1.5 py-1.5 text-[13.5px] shadow-none focus-visible:ring-0"
             rows={1}
           />
@@ -189,9 +287,44 @@ export function Composer({
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.8 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                className="flex items-center gap-1"
               >
+                {!isNote && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Send later"
+                        title="Send later"
+                      >
+                        <Clock className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                        Send later…
+                      </DropdownMenuLabel>
+                      {SEND_LATER_PRESETS.map((p) => {
+                        const when = p.until();
+                        return (
+                          <DropdownMenuItem key={p.key} onClick={() => submit(when)}>
+                            <span className="flex-1">{p.label}</span>
+                            <span className="tabular text-[11px] text-muted-foreground">
+                              {when.toLocaleDateString(undefined, { weekday: 'short' })}{' '}
+                              {when.toLocaleTimeString(undefined, {
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
                 <Button
-                  onClick={submit}
+                  onClick={() => submit()}
                   loading={pending}
                   size="icon-sm"
                   variant={isNote ? 'default' : 'brand'}

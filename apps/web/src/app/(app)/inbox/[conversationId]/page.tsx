@@ -26,7 +26,11 @@ export default async function ConversationPage({
 
   const contactName = conversation.contact?.displayName ?? conversation.title ?? 'Unknown';
   const aiEnabled = loadConfig().aiEnabled;
-  const ai = (conversation.metadata as { ai?: { summary?: string; topic?: string; sentiment?: string } } | null)?.ai;
+  const ai = (
+    conversation.metadata as {
+      ai?: { summary?: string; topic?: string; sentiment?: string; draft?: string };
+    } | null
+  )?.ai;
 
   return (
     <div className="flex h-full min-h-0 flex-1">
@@ -39,8 +43,15 @@ export default async function ConversationPage({
         />
         <ThreadShell
           conversationId={conversation.id}
-          macros={macros.map((m) => ({ id: m.id, name: m.name, body: m.body }))}
+          macros={macros.map((m) => ({
+            id: m.id,
+            name: m.name,
+            body: m.body,
+            shortcut: m.shortcut,
+            hasActions: Object.keys(m.actions ?? {}).length > 0,
+          }))}
           aiEnabled={aiEnabled}
+          aiDraft={ai?.draft ?? null}
           messages={messages.map((m) => ({
             id: m.id,
             body: m.body,

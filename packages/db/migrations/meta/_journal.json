@@ -36,6 +36,13 @@
       "when": 1785967291096,
       "tag": "0004_small_brother_voodoo",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785975330601,
+      "tag": "0005_wandering_mantis",
+      "breakpoints": true
     }
   ]
 }

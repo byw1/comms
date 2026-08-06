@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Inbox, Users, Settings, Hash, Search, Plus } from 'lucide-react';
+import { Inbox, Users, Settings, Hash, Search, Plus, Filter } from 'lucide-react';
 import { Logo } from '@/components/brand';
 import { UserMenu } from '@/components/app/user-menu';
 import { NotificationsBell } from '@/components/app/notifications-bell';
@@ -93,10 +93,12 @@ export function Sidebar({
   user,
   counts,
   inboxes,
+  views = [],
 }: {
   user: { name?: string | null; email?: string | null; image?: string | null };
   counts: { open: number; mine: number; unassigned: number; closed: number };
   inboxes: { id: string; name: string; color: string; connected: boolean }[];
+  views?: { id: string; name: string; href: string; count: number }[];
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -145,6 +147,22 @@ export function Sidebar({
             />
           );
         })}
+
+        {views.length > 0 && (
+          <>
+            <SectionLabel>Views</SectionLabel>
+            {views.map((v) => (
+              <NavRow
+                key={v.id}
+                href={v.href}
+                active={pathname === '/inbox' && searchParams.toString() === v.href.split('?')[1]}
+                icon={Filter}
+                label={v.name}
+                count={v.count}
+              />
+            ))}
+          </>
+        )}
 
         <SectionLabel
           action={

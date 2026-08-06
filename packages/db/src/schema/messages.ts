@@ -42,6 +42,12 @@ export const messages = pgTable(
 
     status: messageStatus('status').notNull().default('sent'),
     error: text('error'),
+    /**
+     * Set when a reply is deliberately scheduled for later. The queued job is
+     * delayed until this time; the UI shows and can cancel it. Distinct from
+     * the short undo-send delay, which leaves this null.
+     */
+    scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
 
     // Reactions / replies / edits
     associatedMessageGuid: text('associated_message_guid'),

@@ -1,7 +1,8 @@
 import 'server-only';
-import { and, asc, desc, eq, ilike, isNull, or, sql } from '@comms/db';
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from '@comms/db';
 import {
   conversations,
+  conversationTags,
   messages,
   inboxes,
   channelConnections,
@@ -9,29 +10,60 @@ import {
   tags,
   macros,
   automationRules,
+  savedViews,
 } from '@comms/db';
 import { db } from '@/server/db';
 
 export type ConversationFilter = {
-  status?: 'open' | 'pending' | 'snoozed' | 'closed' | 'all';
+  /** 'active' means everything except closed — the default working set. */
+  status?: 'open' | 'pending' | 'snoozed' | 'closed' | 'active' | 'all';
   assignee?: 'me' | 'unassigned' | string;
   inboxId?: string;
+  tagIds?: string[];
+  priorityIn?: Array<'low' | 'normal' | 'high' | 'urgent'>;
+  slaBreached?: boolean;
+  unreadOnly?: boolean;
+  sort?: 'newest' | 'oldest' | 'priority';
   search?: string;
   currentUserId?: string;
 };
 
-export async function listConversations(filter: ConversationFilter = {}) {
+/** SQL conditions shared by the list query and the per-view counts. */
+function buildConversationWhere(filter: ConversationFilter) {
   const where = [];
-  if (filter.status && filter.status !== 'all') {
+
+  if (filter.status === 'active') {
+    where.push(sql`${conversations.status} != 'closed'`);
+  } else if (filter.status && filter.status !== 'all') {
     where.push(eq(conversations.status, filter.status));
   }
+
   if (filter.inboxId) where.push(eq(conversations.inboxId, filter.inboxId));
+
   if (filter.assignee === 'unassigned') where.push(isNull(conversations.assigneeId));
   else if (filter.assignee === 'me' && filter.currentUserId) {
     where.push(eq(conversations.assigneeId, filter.currentUserId));
   } else if (filter.assignee && filter.assignee !== 'me') {
     where.push(eq(conversations.assigneeId, filter.assignee));
   }
+
+  if (filter.priorityIn?.length) {
+    where.push(inArray(conversations.priority, filter.priorityIn));
+  }
+
+  if (filter.slaBreached) where.push(sql`${conversations.slaBreachedAt} is not null`);
+  if (filter.unreadOnly) where.push(sql`${conversations.unreadCount} > 0`);
+
+  // Tag filter: conversation must carry EVERY selected tag (AND semantics —
+  // narrowing is what people expect when they add a second tag).
+  if (filter.tagIds?.length) {
+    for (const tagId of filter.tagIds) {
+      where.push(
+        sql`exists (select 1 from ${conversationTags} ct where ct.conversation_id = ${conversations.id} and ct.tag_id = ${tagId})`,
+      );
+    }
+  }
+
   if (filter.search) {
     where.push(
       or(
@@ -41,9 +73,29 @@ export async function listConversations(filter: ConversationFilter = {}) {
     );
   }
 
+  return where;
+}
+
+function orderFor(sort: ConversationFilter['sort']) {
+  if (sort === 'oldest') {
+    return [asc(conversations.lastMessageAt), asc(conversations.createdAt)];
+  }
+  if (sort === 'priority') {
+    // urgent → high → normal → low, then most recent within each band.
+    return [
+      sql`case ${conversations.priority} when 'urgent' then 0 when 'high' then 1 when 'normal' then 2 else 3 end`,
+      desc(conversations.lastMessageAt),
+    ];
+  }
+  return [desc(conversations.lastMessageAt), desc(conversations.createdAt)];
+}
+
+export async function listConversations(filter: ConversationFilter = {}) {
+  const where = buildConversationWhere(filter);
+
   return db.query.conversations.findMany({
     where: where.length ? and(...where) : undefined,
-    orderBy: [desc(conversations.lastMessageAt), desc(conversations.createdAt)],
+    orderBy: orderFor(filter.sort),
     limit: 100,
     with: {
       contact: { columns: { id: true, displayName: true, avatarUrl: true } },
@@ -52,6 +104,31 @@ export async function listConversations(filter: ConversationFilter = {}) {
       tags: { with: { tag: true } },
     },
   });
+}
+
+/** Live count for one saved view — powers the sidebar badges. */
+export async function countConversations(filter: ConversationFilter): Promise<number> {
+  const where = buildConversationWhere(filter);
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(conversations)
+    .where(where.length ? and(...where) : undefined);
+  return Number(row?.n ?? 0);
+}
+
+/** Saved views visible to a user: their own plus every shared one. */
+export async function listSavedViews(userId: string) {
+  const rows = await db.query.savedViews.findMany({
+    where: or(eq(savedViews.ownerUserId, userId), eq(savedViews.isShared, true)),
+    orderBy: [asc(savedViews.sortOrder), asc(savedViews.createdAt)],
+  });
+
+  return Promise.all(
+    rows.map(async (v) => ({
+      ...v,
+      count: await countConversations({ ...v.filters, currentUserId: userId }),
+    })),
+  );
 }
 
 export type ConversationListItem = Awaited<ReturnType<typeof listConversations>>[number];

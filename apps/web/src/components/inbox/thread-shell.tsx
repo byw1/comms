@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { MessageThread, type ThreadMessage } from '@/components/inbox/message-thread';
 import { Composer } from '@/components/inbox/composer';
 import { useCurrentUser } from '@/components/app/realtime-provider';
+import type { MacroOption } from '@/components/inbox/macro-picker';
 import { sendMessage, undoSend } from '@/server/actions/inbox';
 
 type PendingMessage = ThreadMessage & { realId?: string; addedAt: number };
@@ -22,11 +23,13 @@ export function ThreadShell({
   messages,
   macros,
   aiEnabled,
+  aiDraft,
 }: {
   conversationId: string;
   messages: ThreadMessage[];
-  macros: { id: string; name: string; body: string }[];
+  macros: MacroOption[];
   aiEnabled: boolean;
+  aiDraft?: string | null;
 }) {
   const router = useRouter();
   const me = useCurrentUser();
@@ -45,7 +48,11 @@ export function ThreadShell({
   // Switching conversations discards leftover optimistic state.
   useEffect(() => setPending([]), [conversationId]);
 
-  async function handleSubmit(body: string, isNote: boolean): Promise<boolean> {
+  async function handleSubmit(
+    body: string,
+    isNote: boolean,
+    scheduledFor?: Date,
+  ): Promise<boolean> {
     counter.current += 1;
     const tempId = `optimistic-${counter.current}`;
     const optimistic: PendingMessage = {
@@ -66,7 +73,12 @@ export function ThreadShell({
     };
     setPending((prev) => [...prev, optimistic]);
 
-    const res = await sendMessage({ conversationId, body, isPrivateNote: isNote });
+    const res = await sendMessage({
+      conversationId,
+      body,
+      isPrivateNote: isNote,
+      scheduledFor: scheduledFor?.toISOString(),
+    });
     if (!res.ok) {
       setPending((prev) => prev.filter((p) => p.id !== tempId));
       toast.error(res.error);
@@ -74,6 +86,33 @@ export function ThreadShell({
     }
 
     setPending((prev) => prev.map((p) => (p.id === tempId ? { ...p, realId: res.messageId } : p)));
+
+    if (scheduledFor) {
+      const messageId = res.messageId;
+      toast.success(
+        `Scheduled for ${scheduledFor.toLocaleDateString(undefined, { weekday: 'short' })} ${scheduledFor.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`,
+        {
+          duration: 8000,
+          action: {
+            label: 'Cancel',
+            onClick: () => {
+              void (async () => {
+                const undo = await undoSend(messageId);
+                if (undo.ok) {
+                  setPending((prev) => prev.filter((p) => p.realId !== messageId));
+                  toast.success('Scheduled message cancelled');
+                  router.refresh();
+                } else {
+                  toast.error(undo.error);
+                }
+              })();
+            },
+          },
+        },
+      );
+      router.refresh();
+      return true;
+    }
 
     if (!isNote && res.undoMs > 0) {
       const messageId = res.messageId;
@@ -112,6 +151,7 @@ export function ThreadShell({
         conversationId={conversationId}
         macros={macros}
         aiEnabled={aiEnabled}
+        aiDraft={aiDraft}
         onSubmit={handleSubmit}
       />
     </>

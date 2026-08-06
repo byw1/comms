@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Inbox, Settings, Users, Hash, Zap, MessageSquare } from 'lucide-react';
+import { Search, Inbox, Settings, Users, Hash, Zap, MessageSquare, ListFilter } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { searchConversations, type SearchHit } from '@/server/actions/search';
+import { parseSearchQuery, searchFiltersToHref } from '@/lib/search-query';
 import { cn } from '@/lib/utils';
 
 type Item = {
@@ -15,8 +16,17 @@ type Item = {
   action: () => void;
 };
 
-export function CommandPalette() {
+export function CommandPalette({
+  tags = [],
+}: {
+  /** Used to resolve `tag:name` operators to ids. */
+  tags?: { id: string; name: string }[];
+}) {
   const router = useRouter();
+  const tagNameToId = useMemo(
+    () => new Map(tags.map((t) => [t.name.toLowerCase(), t.id])),
+    [tags],
+  );
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<SearchHit[]>([]);
@@ -48,8 +58,15 @@ export function CommandPalette() {
     }
   }, [open]);
 
+  /**
+   * Search operators: `tag:billing`, `status:open`, `from:jordan`, `is:unread`.
+   * Recognised operators become inbox filters; the leftover words are the
+   * free-text query.
+   */
+  const parsed = useMemo(() => parseSearchQuery(query), [query]);
+
   useEffect(() => {
-    const q = query.trim();
+    const q = parsed.text.trim();
     if (q.length < 2) {
       setHits([]);
       return;
@@ -58,7 +75,7 @@ export function CommandPalette() {
       startSearch(async () => setHits(await searchConversations(q)));
     }, 200);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [parsed.text]);
 
   const nav = (href: string) => {
     setOpen(false);
@@ -87,9 +104,24 @@ export function CommandPalette() {
     [],
   );
 
-  const q = query.trim().toLowerCase();
+  const q = parsed.text.trim().toLowerCase();
   const filteredCommands =
-    q.length < 2 ? commands : commands.filter((c) => c.label.toLowerCase().includes(q));
+    q.length < 2 && parsed.applied.length === 0
+      ? commands
+      : commands.filter((c) => c.label.toLowerCase().includes(q));
+
+  // When operators are present, offer "show me that filtered list" as the top hit.
+  const filterHref = parsed.applied.length > 0 ? searchFiltersToHref(parsed, tagNameToId) : null;
+  const filterItem: Item[] = filterHref
+    ? [
+        {
+          id: 'apply-filters',
+          label: `Filter inbox — ${parsed.applied.join(', ')}`,
+          icon: ListFilter,
+          action: () => nav(filterHref),
+        },
+      ]
+    : [];
   const hitItems: Item[] = hits.map((h) => ({
     id: `conv-${h.id}`,
     label: h.title,
@@ -97,7 +129,7 @@ export function CommandPalette() {
     icon: MessageSquare,
     action: () => nav(`/inbox/${h.id}`),
   }));
-  const items = [...filteredCommands, ...hitItems];
+  const items = [...filterItem, ...filteredCommands, ...hitItems];
 
   useEffect(() => {
     setActive(0);
@@ -127,7 +159,7 @@ export function CommandPalette() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search conversations or jump to…"
+            placeholder="Search, or try tag:billing  status:open  is:unread"
             className="h-[52px] w-full bg-transparent text-[13.5px] outline-none placeholder:text-muted-foreground/70"
           />
           <kbd className="shrink-0 rounded border bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">

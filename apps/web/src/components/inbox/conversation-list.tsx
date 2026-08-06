@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { AnimatePresence, motion } from '@/components/ui/motion';
 import { bulkUpdateConversations } from '@/server/actions/inbox';
+import { FilterBar } from '@/components/inbox/filter-bar';
 import { setVisibleConversationIds } from '@/lib/inbox-nav';
 import { cn, initials } from '@/lib/utils';
 import { listTime, relativeTime } from '@/lib/format';
@@ -28,12 +29,18 @@ export function ConversationListPane({
   conversations,
   currentUserId,
   showChannels = false,
+  allTags = [],
+  agents = [],
+  inboxes = [],
 }: {
   conversations: ConversationListItem[];
   currentUserId: string;
   currentUserName: string;
   /** When multiple numbers are connected, show which inbox each conversation belongs to. */
   showChannels?: boolean;
+  allTags?: { id: string; name: string; color: string }[];
+  agents?: { id: string; name: string | null; email: string }[];
+  inboxes?: { id: string; name: string }[];
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -69,16 +76,35 @@ export function ConversationListPane({
   const assignee = searchParams.get('assignee');
   const statusFilter = searchParams.get('status') ?? 'active';
   const inboxFilter = searchParams.get('inbox');
+  const tagFilter = searchParams.get('tags')?.split(',').filter(Boolean) ?? [];
+  const priorityFilter = searchParams.get('priority')?.split(',').filter(Boolean) ?? [];
+  const slaFilter = searchParams.get('sla') === 'breached';
+  const unreadFilter = searchParams.get('unread') === '1';
+  const sort = searchParams.get('sort') ?? 'newest';
   const activeId = pathname.startsWith('/inbox/') ? pathname.split('/inbox/')[1] : null;
 
+  // Filtering and sorting run client-side against the loaded working set so
+  // every filter change is instant (no server round-trip). Saved-view badge
+  // counts come from SQL, which is what keeps them accurate beyond this window.
   const filtered = useMemo(() => {
-    return conversations.filter((c) => {
+    const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
+    const rows = conversations.filter((c) => {
       if (inboxFilter && c.inboxId !== inboxFilter) return false;
       if (assignee === 'me' && c.assigneeId !== currentUserId) return false;
       if (assignee === 'unassigned' && c.assigneeId) return false;
+      if (assignee && assignee !== 'me' && assignee !== 'unassigned' && c.assigneeId !== assignee)
+        return false;
       if (statusFilter === 'active' && c.status === 'closed') return false;
       else if (statusFilter !== 'active' && statusFilter !== 'all' && c.status !== statusFilter)
         return false;
+      if (priorityFilter.length && !priorityFilter.includes(c.priority)) return false;
+      if (slaFilter && !c.slaBreachedAt) return false;
+      if (unreadFilter && c.unreadCount === 0) return false;
+      // AND semantics: every selected tag must be present.
+      if (tagFilter.length) {
+        const ids = new Set(c.tags?.map((t) => t.tag.id) ?? []);
+        if (!tagFilter.every((id) => ids.has(id))) return false;
+      }
       if (query) {
         const hay = `${c.contact?.displayName ?? ''} ${c.title ?? ''} ${
           c.lastMessagePreview ?? ''
@@ -87,7 +113,46 @@ export function ConversationListPane({
       }
       return true;
     });
-  }, [conversations, assignee, statusFilter, inboxFilter, query, currentUserId]);
+
+    const time = (c: (typeof rows)[number]) =>
+      new Date(c.lastMessageAt ?? c.createdAt).getTime();
+    if (sort === 'oldest') rows.sort((a, b) => time(a) - time(b));
+    else if (sort === 'priority')
+      rows.sort(
+        (a, b) =>
+          (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9) ||
+          time(b) - time(a),
+      );
+    else rows.sort((a, b) => time(b) - time(a));
+
+    return rows;
+  }, [
+    conversations,
+    assignee,
+    statusFilter,
+    inboxFilter,
+    query,
+    currentUserId,
+    // Arrays are rebuilt each render; compare by value to avoid a render loop.
+    tagFilter.join(','),
+    priorityFilter.join(','),
+    slaFilter,
+    unreadFilter,
+    sort,
+  ]);
+
+  /** Toggle a tag in the URL filter — used by the clickable tag chips. */
+  function toggleTagFilter(tagId: string) {
+    const current = (searchParams.get('tags') ?? '').split(',').filter(Boolean);
+    const next = current.includes(tagId)
+      ? current.filter((t) => t !== tagId)
+      : [...current, tagId];
+    const params = new URLSearchParams(searchParams.toString());
+    if (next.length) params.set('tags', next.join(','));
+    else params.delete('tags');
+    const qs = params.toString();
+    router.push(qs ? `/inbox?${qs}` : '/inbox');
+  }
 
   // Publish the visible ordering for the global j/k keyboard navigation.
   useEffect(() => {
@@ -138,7 +203,7 @@ export function ConversationListPane({
           </AnimatePresence>
         </div>
 
-        {/* Sliding segmented control — the indicator travels between tabs. */}
+        {/* Sliding segmented control — quick presets over the filter bar. */}
         <div className="flex items-center gap-0.5 rounded-lg bg-secondary/60 p-0.5">
           {tabs.map((t) => {
             const isActive =
@@ -167,6 +232,8 @@ export function ConversationListPane({
           })}
         </div>
       </div>
+
+      <FilterBar allTags={allTags} agents={agents} inboxes={inboxes} />
 
       <AnimatePresence>
         {selected.size > 0 && (
@@ -361,13 +428,21 @@ export function ConversationListPane({
                           </span>
                         )}
                         {c.tags?.map((t) => (
-                          <span
+                          // Clicking a tag filters the list by it — the whole
+                          // point of tagging, and previously a dead end.
+                          <button
                             key={t.tag.id}
-                            className="inline-flex items-center rounded-md px-1.5 py-px text-[11px] font-medium"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              toggleTagFilter(t.tag.id);
+                            }}
+                            title={`Filter by ${t.tag.name}`}
+                            className="inline-flex items-center rounded-md px-1.5 py-px text-[11px] font-medium transition-opacity hover:opacity-75"
                             style={{ backgroundColor: `${t.tag.color}18`, color: t.tag.color }}
                           >
                             {t.tag.name}
-                          </span>
+                          </button>
                         ))}
                       </div>
                     )}

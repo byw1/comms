@@ -7,4 +7,5 @@ export * from './ratelimit.js';
 export * from './realtime.js';
 export * from './storage.js';
 export * from './ids.js';
+export * from './template.js';
 export * from './bluebubbles/index.js';

@@ -70,6 +70,8 @@ export async function sendMessage(input: {
   body: string;
   isPrivateNote?: boolean;
   replyToMessageGuid?: string;
+  /** ISO timestamp to deliberately delay delivery until (scheduled send). */
+  scheduledFor?: string;
 }): Promise<SendResult> {
   const user = await requireUser();
   const body = input.body.trim();
@@ -99,12 +101,17 @@ export async function sendMessage(input: {
     }
   }
 
+  // A scheduled send is a deliberate future delivery; it bypasses the short
+  // undo window (the whole message is undoable until it fires anyway).
+  const scheduledAt =
+    !input.isPrivateNote && input.scheduledFor ? new Date(input.scheduledFor) : null;
+
   const [msg] = await db
     .insert(messages)
     .values({
       conversationId: conv.id,
       direction: 'outbound',
-      authorType: input.isPrivateNote ? 'agent' : 'agent',
+      authorType: 'agent',
       authorUserId: user.id,
       body,
       isPrivateNote: Boolean(input.isPrivateNote),
@@ -112,6 +119,7 @@ export async function sendMessage(input: {
       tempGuid: input.isPrivateNote ? null : newTempGuid(),
       replyToMessageGuid: input.replyToMessageGuid ?? null,
       sentAt: input.isPrivateNote ? new Date() : null,
+      scheduledFor: scheduledAt,
     })
     .returning();
 
@@ -132,6 +140,7 @@ export async function sendMessage(input: {
   // Undo-send: real replies sit in a delayed job for the undo window; undoSend
   // removes the job by id before the worker ever sees it. Notes skip this.
   const undoMs = input.isPrivateNote ? 0 : loadConfig().UNDO_SEND_SECONDS * 1000;
+  const delayMs = scheduledAt ? Math.max(scheduledAt.getTime() - Date.now(), 0) : undoMs;
 
   if (!input.isPrivateNote && connection) {
     await enqueueOutbound(
@@ -140,7 +149,7 @@ export async function sendMessage(input: {
         conversationId: conv.id,
         connectionId: connection.id,
       },
-      { jobId: msg.id, delay: undoMs },
+      { jobId: msg.id, delay: delayMs },
     );
   }
 
@@ -155,7 +164,13 @@ export async function sendMessage(input: {
     messageId: msg.id,
   });
   revalidatePath(`/inbox/${conv.id}`);
-  return { ok: true, messageId: msg.id, undoMs };
+  // A scheduled message shows a "cancel" affordance instead of an undo toast.
+  return { ok: true, messageId: msg.id, undoMs: scheduledAt ? 0 : undoMs };
+}
+
+/** Cancel a scheduled reply before it fires. Same mechanism as undo-send. */
+export async function cancelScheduled(messageId: string): Promise<ActionResult> {
+  return undoSend(messageId);
 }
 
 /**

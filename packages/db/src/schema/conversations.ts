@@ -42,6 +42,14 @@ export const conversations = pgTable(
     assigneeId: text('assignee_id').references(() => users.id, { onDelete: 'set null' }),
     assignedTeamId: text('assigned_team_id').references(() => teams.id, { onDelete: 'set null' }),
     snoozedUntil: timestamp('snoozed_until', { withTimezone: true }),
+    /**
+     * "Bump this back to me if the customer hasn't replied by then." Unlike a
+     * snooze it resolves silently when `lastInboundAt` moves past
+     * `followUpArmedAt` — you're only reminded about actual silence.
+     */
+    followUpAt: timestamp('follow_up_at', { withTimezone: true }),
+    followUpArmedAt: timestamp('follow_up_armed_at', { withTimezone: true }),
+    followUpUserId: text('follow_up_user_id').references(() => users.id, { onDelete: 'set null' }),
 
     // Activity denormalizations for fast list rendering
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }),

@@ -1,0 +1,56 @@
+import { pgTable, text, integer, boolean, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
+import { genId, timestamps } from './_helpers.js';
+import { users } from './auth.js';
+
+/** The filter set behind a saved view — mirrors the inbox filter bar. */
+export interface ViewFilters {
+  status?: 'open' | 'pending' | 'snoozed' | 'closed' | 'active' | 'all';
+  /** A user id, or 'me' / 'unassigned'. */
+  assignee?: string;
+  inboxId?: string;
+  tagIds?: string[];
+  priorityIn?: Array<'low' | 'normal' | 'high' | 'urgent'>;
+  /** Only conversations past (or approaching) their SLA. */
+  slaBreached?: boolean;
+  unreadOnly?: boolean;
+  sort?: 'newest' | 'oldest' | 'priority';
+}
+
+/**
+ * A named, saved filter set pinned to the sidebar — the "split inbox" analog.
+ * Personal by default; `isShared` promotes it to a team view.
+ */
+export const savedViews = pgTable(
+  'saved_views',
+  {
+    id: text('id').primaryKey().$defaultFn(genId('view')),
+    name: text('name').notNull(),
+    /** Lucide icon name rendered in the sidebar. */
+    icon: text('icon').notNull().default('Filter'),
+    filters: jsonb('filters').$type<ViewFilters>().notNull().default({}),
+    isShared: boolean('is_shared').notNull().default(false),
+    ownerUserId: text('owner_user_id').references(() => users.id, { onDelete: 'cascade' }),
+    sortOrder: integer('sort_order').notNull().default(0),
+    ...timestamps,
+  },
+  (v) => [index('saved_views_owner_idx').on(v.ownerUserId)],
+);
+
+/**
+ * A tag the AI keeps wanting to apply but which doesn't exist yet. Triage
+ * records them here (with a running count) instead of silently dropping them;
+ * an admin approves once and it becomes a real tag.
+ */
+export const tagSuggestions = pgTable(
+  'tag_suggestions',
+  {
+    id: text('id').primaryKey().$defaultFn(genId('tsug')),
+    name: text('name').notNull().unique(),
+    /** How many conversations the AI wanted to apply this to. */
+    count: integer('count').notNull().default(1),
+    /** Set when an admin rejects the suggestion — never surfaced again. */
+    dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [index('tag_suggestions_count_idx').on(t.count)],
+);

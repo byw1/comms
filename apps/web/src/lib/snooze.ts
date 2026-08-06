@@ -12,6 +12,30 @@ function at(base: Date, hour: number): Date {
   return d;
 }
 
+/** "Send later" options — deliberately business-hours friendly. */
+export const SEND_LATER_PRESETS: SnoozePreset[] = [
+  { key: 'in1h', label: 'In 1 hour', until: () => new Date(Date.now() + 3600_000) },
+  {
+    key: 'tomorrow9',
+    label: 'Tomorrow, 9 AM',
+    until: () => {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      return at(d, 9);
+    },
+  },
+  {
+    key: 'monday9',
+    label: 'Monday, 9 AM',
+    until: () => {
+      const d = new Date();
+      const day = d.getDay();
+      d.setDate(d.getDate() + ((1 - day + 7) % 7 || 7));
+      return at(d, 9);
+    },
+  },
+];
+
 export const SNOOZE_PRESETS: SnoozePreset[] = [
   {
     key: 'later',
