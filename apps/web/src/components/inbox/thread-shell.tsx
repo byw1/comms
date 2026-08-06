@@ -18,19 +18,28 @@ type PendingMessage = ThreadMessage & { realId?: string; addedAt: number };
  * delayed-send window. Server props flowing back through router.refresh
  * reconcile away the optimistic copy.
  */
+export interface ReplyTarget {
+  id: string;
+  body: string | null;
+  guid: string | null;
+}
+
 export function ThreadShell({
   conversationId,
   messages,
   macros,
   aiEnabled,
   aiDraft,
+  canReact = false,
 }: {
   conversationId: string;
   messages: ThreadMessage[];
   macros: MacroOption[];
   aiEnabled: boolean;
   aiDraft?: string | null;
+  canReact?: boolean;
 }) {
+  const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   const router = useRouter();
   const me = useCurrentUser();
   const [pending, setPending] = useState<PendingMessage[]>([]);
@@ -46,7 +55,10 @@ export function ThreadShell({
   }, [serverIds]);
 
   // Switching conversations discards leftover optimistic state.
-  useEffect(() => setPending([]), [conversationId]);
+  useEffect(() => {
+    setPending([]);
+    setReplyTo(null);
+  }, [conversationId]);
 
   async function handleSubmit(
     body: string,
@@ -78,7 +90,10 @@ export function ThreadShell({
       body,
       isPrivateNote: isNote,
       scheduledFor: scheduledFor?.toISOString(),
+      // Inline reply — the outbound worker already forwards this to BlueBubbles.
+      replyToMessageGuid: !isNote ? (replyTo?.guid ?? undefined) : undefined,
     });
+    setReplyTo(null);
     if (!res.ok) {
       setPending((prev) => prev.filter((p) => p.id !== tempId));
       toast.error(res.error);
@@ -146,12 +161,19 @@ export function ThreadShell({
 
   return (
     <>
-      <MessageThread conversationId={conversationId} messages={merged} />
+      <MessageThread
+        conversationId={conversationId}
+        messages={merged}
+        canReact={canReact}
+        onReplyTo={setReplyTo}
+      />
       <Composer
         conversationId={conversationId}
         macros={macros}
         aiEnabled={aiEnabled}
         aiDraft={aiDraft}
+        replyTo={replyTo}
+        onCancelReply={() => setReplyTo(null)}
         onSubmit={handleSubmit}
       />
     </>

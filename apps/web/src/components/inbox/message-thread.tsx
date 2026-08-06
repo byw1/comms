@@ -5,6 +5,7 @@ import { Check, CheckCheck, Clock, Loader2, AlertCircle, Paperclip, Lock } from 
 import { cn } from '@/lib/utils';
 import { clockTime, dayLabel } from '@/lib/format';
 import { markRead } from '@/server/actions/inbox';
+import { MessageActions } from '@/components/inbox/message-actions';
 
 type Attachment = {
   id: string;
@@ -16,6 +17,8 @@ type Attachment = {
 export type ThreadMessage = {
   id: string;
   body: string | null;
+  /** Null until the message has actually left the Mac — can't be reacted to yet. */
+  providerMessageGuid?: string | null;
   authorType: 'contact' | 'agent' | 'system' | 'external';
   direction: 'inbound' | 'outbound';
   isPrivateNote: boolean;
@@ -121,9 +124,14 @@ function TimelineNote({ children }: { children: React.ReactNode }) {
 export function MessageThread({
   conversationId,
   messages,
+  canReact = false,
+  onReplyTo,
 }: {
   conversationId: string;
   messages: ThreadMessage[];
+  /** Private API available — tapbacks can actually be delivered. */
+  canReact?: boolean;
+  onReplyTo?: (m: { id: string; body: string | null; guid: string | null }) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -202,7 +210,7 @@ export function MessageThread({
             {dayDivider}
             <div
               className={cn(
-                'flex animate-bubble-in flex-col',
+                'group/msg flex animate-bubble-in flex-col',
                 isOutbound ? 'items-end' : 'items-start',
                 sameAsPrev ? 'mt-0.5' : 'mt-3',
               )}
@@ -214,6 +222,27 @@ export function MessageThread({
               )}
 
               <div
+                className={cn(
+                  'flex max-w-full items-center gap-1',
+                  isOutbound ? 'flex-row' : 'flex-row-reverse',
+                )}
+              >
+                {onReplyTo && !isNote && (
+                  <MessageActions
+                    conversationId={conversationId}
+                    messageId={m.id}
+                    canReact={canReact && Boolean(m.providerMessageGuid)}
+                    side={isOutbound ? 'right' : 'left'}
+                    onReply={() =>
+                      onReplyTo({
+                        id: m.id,
+                        body: m.body,
+                        guid: m.providerMessageGuid ?? null,
+                      })
+                    }
+                  />
+                )}
+                <div
                 className={cn(
                   'max-w-[74%] space-y-2 px-3.5 py-2 text-[13.5px] leading-relaxed shadow-xs',
                   // Rounded 18px everywhere, squared on the grouped edge.
@@ -246,10 +275,11 @@ export function MessageThread({
                     Internal note
                   </p>
                 )}
-                {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
-                {m.attachments.map((a) => (
-                  <AttachmentView key={a.id} att={a} onBubble={isOutbound && !isNote} />
-                ))}
+                  {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+                  {m.attachments.map((a) => (
+                    <AttachmentView key={a.id} att={a} onBubble={isOutbound && !isNote} />
+                  ))}
+                </div>
               </div>
 
               {/* Timestamp only on the last message of a group — cuts visual noise a lot. */}

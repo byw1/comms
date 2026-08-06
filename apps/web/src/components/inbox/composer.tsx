@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { toast } from 'sonner';
-import { Send, Zap, StickyNote, CornerDownLeft, Clock } from 'lucide-react';
+import { Send, Zap, StickyNote, CornerDownLeft, Clock, CornerUpLeft, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -21,6 +21,7 @@ import {
   type MacroOption,
 } from '@/components/inbox/macro-picker';
 import { applyMacro } from '@/server/actions/macros';
+import { sendTypingIndicator } from '@/server/actions/imessage';
 import { SEND_LATER_PRESETS } from '@/lib/snooze';
 import { cn } from '@/lib/utils';
 
@@ -29,6 +30,8 @@ export function Composer({
   macros,
   aiEnabled,
   aiDraft,
+  replyTo,
+  onCancelReply,
   onSubmit,
 }: {
   conversationId: string;
@@ -36,6 +39,9 @@ export function Composer({
   aiEnabled: boolean;
   /** Pre-computed suggestion shown as ghost text; Tab accepts it. */
   aiDraft?: string | null;
+  /** The message this reply is threaded to, if any. */
+  replyTo?: { id: string; body: string | null; guid: string | null } | null;
+  onCancelReply?: () => void;
   /**
    * Owns the actual send (optimistic append + server action + undo toast).
    * Returns false on failure so the composer can restore the draft.
@@ -57,18 +63,35 @@ export function Composer({
     return () => window.removeEventListener('comms:focus-composer', focus);
   }, []);
 
-  // Broadcast a throttled "typing" presence ping so other agents see collisions.
+  // Broadcast a throttled "typing" presence ping so other agents see collisions,
+  // and — when the inbox enables it — show the customer a real iMessage typing
+  // bubble. Stops after a pause or on send so it never sticks on.
   useEffect(() => {
-    if (!body.trim()) return;
+    if (!body.trim() || isNote) return;
     const now = Date.now();
     if (now - lastTypingPing.current < 2000) return;
     lastTypingPing.current = now;
+
     fetch('/api/presence', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ conversationId, state: 'typing' }),
     }).catch(() => {});
-  }, [body, conversationId]);
+
+    void sendTypingIndicator({ conversationId, isTyping: true });
+  }, [body, conversationId, isNote]);
+
+  // Clear the customer-facing bubble ~4s after they stop typing.
+  useEffect(() => {
+    if (isNote) return;
+    const t = setTimeout(() => {
+      if (lastTypingPing.current > 0) {
+        lastTypingPing.current = 0;
+        void sendTypingIndicator({ conversationId, isTyping: false });
+      }
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [body, conversationId, isNote]);
 
   // Grow the textarea with its content instead of scrolling inside a fixed box.
   useEffect(() => {
@@ -172,6 +195,34 @@ export function Composer({
           focused && isNote && 'ring-[3px] ring-warning/15',
         )}
       >
+        {/* Reply-to banner: shows what this message threads onto. */}
+        <AnimatePresence>
+          {replyTo && !isNote && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+              className="overflow-hidden"
+            >
+              <div className="mx-2 mt-2 flex items-start gap-2 rounded-lg border-l-2 border-primary bg-secondary/60 px-2.5 py-1.5">
+                <CornerUpLeft className="mt-px h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="line-clamp-1 flex-1 text-[11.5px] text-muted-foreground">
+                  {replyTo.body || 'Attachment'}
+                </span>
+                <button
+                  type="button"
+                  onClick={onCancelReply}
+                  className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label="Cancel reply"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="flex items-center justify-between gap-2 px-2 pt-2">
           {/* Segmented reply/note switch — clearer than a bare toggle. */}
           <div className="flex items-center gap-0.5 rounded-lg bg-secondary/70 p-0.5">

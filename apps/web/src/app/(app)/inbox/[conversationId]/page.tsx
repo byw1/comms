@@ -1,6 +1,13 @@
 import { notFound } from 'next/navigation';
 import { loadConfig } from '@comms/core';
-import { getConversation, getMessages, listAgents, listTags, listMacros } from '@/server/queries';
+import {
+  getConversation,
+  getMessages,
+  listAgents,
+  listTags,
+  listMacros,
+  getConnectionForInbox,
+} from '@/server/queries';
 import { ThreadShell } from '@/components/inbox/thread-shell';
 import { TicketPanel } from '@/components/inbox/ticket-panel';
 import { ConversationHeader } from '@/components/inbox/conversation-header';
@@ -17,12 +24,17 @@ export default async function ConversationPage({
   const conversation = await getConversation(conversationId);
   if (!conversation) notFound();
 
-  const [messages, agents, tags, macros] = await Promise.all([
+  const [messages, agents, tags, macros, connection] = await Promise.all([
     getMessages(conversationId),
     listAgents(),
     listTags(),
     listMacros(),
+    getConnectionForInbox(conversation.inboxId),
   ]);
+
+  // Tapbacks, typing indicators and edits all require the BlueBubbles Private
+  // API; hide the affordances entirely when the Mac can't deliver them.
+  const canReact = Boolean(connection?.capabilities?.privateApi);
 
   const contactName = conversation.contact?.displayName ?? conversation.title ?? 'Unknown';
   const aiEnabled = loadConfig().aiEnabled;
@@ -52,9 +64,11 @@ export default async function ConversationPage({
           }))}
           aiEnabled={aiEnabled}
           aiDraft={ai?.draft ?? null}
+          canReact={canReact}
           messages={messages.map((m) => ({
             id: m.id,
             body: m.body,
+            providerMessageGuid: m.providerMessageGuid,
             authorType: m.authorType,
             direction: m.direction,
             isPrivateNote: m.isPrivateNote,
