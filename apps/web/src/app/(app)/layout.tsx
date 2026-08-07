@@ -10,6 +10,7 @@ import { Sidebar } from '@/components/app/sidebar';
 import { RealtimeProvider } from '@/components/app/realtime-provider';
 import { ChannelHealthBanner } from '@/components/app/channel-health-banner';
 import { CommandPalette } from '@/components/app/command-palette';
+import { NewConversation } from '@/components/inbox/new-conversation';
 import { MobileTopBar, SidebarShell } from '@/components/app/mobile-shell';
 
 export const dynamic = 'force-dynamic';
@@ -72,6 +73,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </div>
       <CommandPalette tags={tagRows.map((t) => ({ id: t.id, name: t.name }))} />
+      <NewConversation />
     </RealtimeProvider>
   );
 }

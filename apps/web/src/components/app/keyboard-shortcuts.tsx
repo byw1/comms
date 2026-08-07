@@ -108,6 +108,7 @@ export function KeyboardShortcuts() {
   }, [activeId, router]);
 
   const rows: { keys: string[]; label: string }[] = [
+    { keys: ['c'], label: 'New conversation' },
     { keys: ['j', '↓'], label: 'Next conversation' },
     { keys: ['k', '↑'], label: 'Previous conversation' },
     { keys: ['e'], label: 'Close and advance' },

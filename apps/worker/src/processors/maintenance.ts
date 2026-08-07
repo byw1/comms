@@ -119,15 +119,41 @@ async function heartbeat(connectionId: string) {
   }
 }
 
+/**
+ * Reconcile messages the webhook may have missed.
+ *
+ * The naive version asked the Mac for the messages of EVERY chat on every run
+ * — 500 sequential HTTP requests against a machine that might be a laptop.
+ * That saturated the bridge and caused the heartbeat to time out, which then
+ * looked like the Mac going offline.
+ *
+ * `queryChats` already returns each chat's last message, so a chat with no
+ * activity since our last sync can be skipped without asking about it. On a
+ * quiet interval this drops from 500 requests to zero.
+ */
 async function backfill(connectionId: string, since?: number) {
   const db = getDb();
   const { client, connection } = await loadConnection(connectionId);
   const after = since ?? connection.lastSyncedAt?.getTime();
 
   const chats = await client.queryChats({ limit: 500, with: ['lastMessage', 'participants'] });
-  log.info({ connectionId, chats: chats.length }, 'backfill: fetched chats');
 
-  for (const chat of chats) {
+  const stale = after
+    ? chats.filter((chat) => {
+        const last = (chat as { lastMessage?: { dateCreated?: number } }).lastMessage;
+        // No timestamp available → can't rule it out, so check it.
+        if (!last?.dateCreated) return true;
+        return last.dateCreated > after;
+      })
+    : chats;
+
+  log.info(
+    { connectionId, chats: chats.length, checking: stale.length },
+    'backfill: fetched chats',
+  );
+
+  let ingested = 0;
+  for (const chat of stale) {
     try {
       const msgs = await client.getChatMessages(chat.guid, {
         after,
@@ -138,11 +164,14 @@ async function backfill(connectionId: string, since?: number) {
       for (const m of msgs) {
         // ingestNewMessage dedups by provider guid, so re-runs are safe.
         await ingestNewMessage(connectionId, { ...m, chats: m.chats ?? [chat] });
+        ingested += 1;
       }
     } catch (err) {
       log.warn({ chat: chat.guid, err: (err as Error).message }, 'backfill chat failed');
     }
   }
+
+  if (ingested > 0) log.info({ connectionId, ingested }, 'backfill: ingested messages');
 
   await db
     .update(channelConnections)

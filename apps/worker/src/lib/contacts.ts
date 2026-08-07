@@ -3,6 +3,7 @@ import { contacts, contactIdentities, channelConnections } from '@comms/db';
 import {
   type BBContact,
   normalizeAddress,
+  addressMatchKey,
   putObject,
   isStorageEnabled,
   logger,
@@ -28,10 +29,17 @@ function displayNameOf(c: BBContact): string | null {
   return (c.displayName?.trim() || full || c.nickname?.trim() || null) ?? null;
 }
 
-/** Every usable address on a contact, normalized for matching. */
+/**
+ * Every usable address on a contact.
+ *
+ * Tolerates both shapes: the documented `{ address }` objects and bare strings,
+ * because getting this wrong fails silently — an empty address list means the
+ * contact is skipped with no error anywhere.
+ */
 function addressesOf(c: BBContact) {
-  return [...(c.phoneNumbers ?? []), ...(c.emails ?? [])]
-    .map((a) => a.address)
+  const raw: unknown[] = [...(c.phoneNumbers ?? []), ...(c.emails ?? [])];
+  return raw
+    .map((a) => (typeof a === 'string' ? a : (a as { address?: string | null })?.address))
     .filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
     .map((a) => normalizeAddress(a));
 }
@@ -49,9 +57,13 @@ function isPlaceholderName(name: string | null, addresses: string[]): boolean {
 
 export interface ContactSyncResult {
   fetched: number;
+  /** Address-book entries that yielded at least one usable address. */
+  withAddresses: number;
   enriched: number;
   created: number;
   skippedCollisions: number;
+  skippedNoName: number;
+  alreadyNamed: number;
   macContactsVisible: boolean;
 }
 
@@ -71,55 +83,78 @@ export async function syncContacts(connectionId: string): Promise<ContactSyncRes
   // Two passes: the roster is fast, avatars are slow (base64-inlined), so they
   // come in batches rather than one enormous request that would time out.
   const roster = await client.listContacts({ withAvatars: false });
-  log.info({ connectionId, count: roster.length }, 'contact roster fetched');
+  // Log one anonymised sample so a shape mismatch is diagnosable from logs
+  // rather than showing up as "nothing synced and no error".
+  const sample = roster[0];
+  log.info(
+    {
+      connectionId,
+      count: roster.length,
+      sampleKeys: sample ? Object.keys(sample) : [],
+      samplePhoneShape: Array.isArray(sample?.phoneNumbers)
+        ? typeof sample.phoneNumbers[0]
+        : typeof sample?.phoneNumbers,
+    },
+    'contact roster fetched',
+  );
 
   const result: ContactSyncResult = {
     fetched: roster.length,
+    withAddresses: 0,
     enriched: 0,
     created: 0,
     skippedCollisions: 0,
+    skippedNoName: 0,
+    alreadyNamed: 0,
     // If macOS Contacts permission was never granted, the 'api' half is empty
     // and we'd silently sync almost nothing — surface that to the operator.
     macContactsVisible: roster.some((c) => c.sourceType === 'api'),
   };
 
-  // Dedupe by normalized address, preferring the macOS ('api') record: it's
-  // the one carrying nickname/birthday. BlueBubbles returns the same human
-  // twice with no cross-source dedup.
-  const byAddress = new Map<string, BBContact>();
+  // Dedupe by MATCH KEY, not by the stored value: iMessage gives E.164 while
+  // the address book gives national format, so exact comparison silently
+  // matches almost nothing. Prefer the macOS ('api') record — it's the one
+  // carrying nickname/birthday.
+  const byKey = new Map<string, { contact: BBContact; address: ReturnType<typeof normalizeAddress> }>();
   for (const c of roster) {
-    for (const addr of addressesOf(c)) {
-      const existing = byAddress.get(addr.value);
-      if (!existing || (c.sourceType === 'api' && existing.sourceType !== 'api')) {
-        byAddress.set(addr.value, c);
+    const addrs = addressesOf(c);
+    if (addrs.length > 0) result.withAddresses += 1;
+    for (const addr of addrs) {
+      const key = addressMatchKey(addr);
+      const existing = byKey.get(key);
+      if (!existing || (c.sourceType === 'api' && existing.contact.sourceType !== 'api')) {
+        byKey.set(key, { contact: c, address: addr });
       }
     }
   }
 
-  // Which of these addresses do we already know?
-  const allValues = Array.from(byAddress.keys());
-  const known = allValues.length
-    ? await db
-        .select({
-          value: contactIdentities.value,
-          contactId: contactIdentities.contactId,
-          displayName: contacts.displayName,
-          avatarUrl: contacts.avatarUrl,
-        })
-        .from(contactIdentities)
-        .innerJoin(contacts, eq(contacts.id, contactIdentities.contactId))
-        .where(inArray(contactIdentities.value, allValues))
-    : [];
-  const knownByValue = new Map(known.map((k) => [k.value, k]));
+  // Load every identity we already have and index it by the same match key.
+  // (Cheaper and more reliable than a huge IN list of values that wouldn't
+  // match anyway.)
+  const known = await db
+    .select({
+      value: contactIdentities.value,
+      kind: contactIdentities.kind,
+      contactId: contactIdentities.contactId,
+      displayName: contacts.displayName,
+      avatarUrl: contacts.avatarUrl,
+    })
+    .from(contactIdentities)
+    .innerJoin(contacts, eq(contacts.id, contactIdentities.contactId));
+
+  const knownByKey = new Map<string, (typeof known)[number]>();
+  for (const k of known) {
+    knownByKey.set(addressMatchKey({ kind: k.kind, value: k.value, raw: k.value }), k);
+  }
 
   // Avatars only for contacts we'll actually touch, in batches of 50.
-  const wantAvatars = Array.from(byAddress.entries())
-    .filter(([value, c]) => {
-      const k = knownByValue.get(value);
+  const wantAvatars = Array.from(byKey.entries())
+    .filter(([key, entry]) => {
+      const k = knownByKey.get(key);
       if (!k) return true; // new contact
-      return !k.avatarUrl || isPlaceholderName(k.displayName, [value]);
+      return !k.avatarUrl || isPlaceholderName(k.displayName, [entry.address.value]);
     })
-    .map(([value]) => value);
+    .map(([, entry]) => entry.address.raw);
 
   const avatarByAddress = new Map<string, string>();
   if (isStorageEnabled() && wantAvatars.length) {
@@ -129,7 +164,7 @@ export async function syncContacts(connectionId: string): Promise<ContactSyncRes
         const detailed = await client.queryContacts(batch, { withAvatars: true });
         for (const c of detailed) {
           if (!c.avatar) continue;
-          for (const a of addressesOf(c)) avatarByAddress.set(a.value, c.avatar);
+          for (const a of addressesOf(c)) avatarByAddress.set(addressMatchKey(a), c.avatar);
         }
       } catch (err) {
         log.warn({ err: (err as Error).message }, 'avatar batch failed; continuing without');
@@ -154,20 +189,22 @@ export async function syncContacts(connectionId: string): Promise<ContactSyncRes
 
   const now = new Date();
 
-  for (const [value, bb] of byAddress) {
+  for (const [key, { contact: bb, address: norm }] of byKey) {
     const name = displayNameOf(bb);
-    const existing = knownByValue.get(value);
+    const existing = knownByKey.get(key);
 
     if (existing) {
       const patch: Partial<typeof contacts.$inferInsert> = { syncedAt: now };
       // Only overwrite a name that's really just the raw address.
-      if (name && isPlaceholderName(existing.displayName, [value])) {
+      if (name && isPlaceholderName(existing.displayName, [existing.value, norm.value])) {
         patch.displayName = name;
+      } else if (name) {
+        result.alreadyNamed += 1;
       }
-      if (!existing.avatarUrl && avatarByAddress.has(value)) {
-        const key = await storeAvatar(existing.contactId, avatarByAddress.get(value)!);
-        if (key) {
-          patch.avatarStorageKey = key;
+      if (!existing.avatarUrl && avatarByAddress.has(key)) {
+        const stored = await storeAvatar(existing.contactId, avatarByAddress.get(key)!);
+        if (stored) {
+          patch.avatarStorageKey = stored;
           patch.avatarUrl = `/api/avatars/${existing.contactId}`;
         }
       }
@@ -181,7 +218,7 @@ export async function syncContacts(connectionId: string): Promise<ContactSyncRes
     // Unknown address → create a contact, unless one of this person's OTHER
     // addresses already maps to a Comms contact (in which case just attach).
     const siblings = addressesOf(bb)
-      .map((a) => knownByValue.get(a.value)?.contactId)
+      .map((a) => knownByKey.get(addressMatchKey(a))?.contactId)
       .filter((id): id is string => Boolean(id));
     const uniqueSiblings = Array.from(new Set(siblings));
 
@@ -189,13 +226,16 @@ export async function syncContacts(connectionId: string): Promise<ContactSyncRes
       // This address book entry spans two existing Comms contacts. Merging
       // them automatically would be destructive — leave for a manual UI.
       result.skippedCollisions += 1;
-      log.info({ value, contactIds: uniqueSiblings }, 'contact collision; not auto-merging');
+      log.info({ key, contactIds: uniqueSiblings }, 'contact collision; not auto-merging');
       continue;
     }
 
     let contactId = uniqueSiblings[0];
     if (!contactId) {
-      if (!name) continue; // nothing worth creating a record for
+      if (!name) {
+        result.skippedNoName += 1;
+        continue; // nothing worth creating a record for
+      }
       const [created] = await db
         .insert(contacts)
         .values({ displayName: name, syncedAt: now })
@@ -204,23 +244,30 @@ export async function syncContacts(connectionId: string): Promise<ContactSyncRes
       contactId = created.id;
       result.created += 1;
 
-      const avatar = avatarByAddress.get(value);
+      const avatar = avatarByAddress.get(key);
       if (avatar) {
-        const key = await storeAvatar(contactId, avatar);
-        if (key) {
+        const stored = await storeAvatar(contactId, avatar);
+        if (stored) {
           await db
             .update(contacts)
-            .set({ avatarStorageKey: key, avatarUrl: `/api/avatars/${contactId}` })
+            .set({ avatarStorageKey: stored, avatarUrl: `/api/avatars/${contactId}` })
             .where(eq(contacts.id, contactId));
         }
       }
     }
 
-    const norm = normalizeAddress(value);
     await db
       .insert(contactIdentities)
       .values({ contactId, kind: norm.kind, value: norm.value, rawValue: norm.raw })
       .onConflictDoNothing();
+    // Newly attached identity — keep the index current for later iterations.
+    knownByKey.set(key, {
+      value: norm.value,
+      kind: norm.kind,
+      contactId,
+      displayName: name,
+      avatarUrl: null,
+    });
   }
 
   await db

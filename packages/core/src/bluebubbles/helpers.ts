@@ -35,6 +35,35 @@ export function normalizeAddress(address: string): NormalizedIdentity {
   return { kind: 'handle', value: raw, raw };
 }
 
+/**
+ * A key for deciding whether two addresses are the same person.
+ *
+ * Storage normalization isn't enough on its own: iMessage hands us E.164
+ * (`+15551234567`) while the Mac's address book stores national format
+ * (`(555) 123-4567` → `+5551234567`). Comparing those literally never matches,
+ * which silently breaks every contact join. Phone numbers therefore match on
+ * their last 10 significant digits — enough to identify a person, short enough
+ * to survive country-code and formatting differences.
+ */
+export function phoneMatchKey(value: string): string | null {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 7) return null;
+  return digits.slice(-10);
+}
+
+/** Comparable key for any normalized identity. */
+export function addressMatchKey(identity: NormalizedIdentity): string {
+  if (identity.kind === 'phone') {
+    return `phone:${phoneMatchKey(identity.value) ?? identity.value}`;
+  }
+  return `${identity.kind}:${identity.value.toLowerCase()}`;
+}
+
+/** Convenience: match key straight from a raw address string. */
+export function matchKeyForAddress(raw: string): string {
+  return addressMatchKey(normalizeAddress(raw));
+}
+
 /** Convert a BlueBubbles ms timestamp into a Date (or null for 0 / undefined). */
 export function bbDate(ms: number | undefined | null): Date | null {
   if (!ms || ms <= 0) return null;

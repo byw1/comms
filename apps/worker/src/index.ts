@@ -68,7 +68,10 @@ async function main() {
     const got = await redis.set('comms:sweep:lock', '1', 'PX', 55_000, 'NX');
     if (!got) return;
     tick += 1;
-    const reconcile = tick % 5 === 0;
+    // Webhooks are the primary path; this is only a safety net for events the
+    // Mac dropped while we were unreachable. Every 5 minutes was aggressive
+    // enough to saturate the bridge on its own.
+    const reconcile = tick % 30 === 0;
     try {
       await enqueueMaintenance({ type: 'unsnooze' });
       await enqueueMaintenance({ type: 'sla' });

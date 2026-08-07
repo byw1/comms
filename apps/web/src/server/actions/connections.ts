@@ -335,6 +335,22 @@ export async function testConnection(
   }
 }
 
+/**
+ * Trigger a contact sync immediately and report what it did, so a sync that
+ * quietly matches nothing is visible instead of mysterious.
+ */
+export async function syncContactsNow(
+  connectionId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  await requireAdmin();
+  try {
+    await enqueueMaintenance({ type: 'contactSync', connectionId });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
 /** Re-register the webhook (e.g. after the public URL changes). */
 export async function reRegisterWebhook(
   connectionId: string,

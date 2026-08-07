@@ -261,6 +261,30 @@ export class BlueBubblesClient {
     });
   }
 
+  /**
+   * Start a brand-new chat with one or more addresses. This is what turns
+   * Comms from purely reactive (reply to whoever texts first) into something
+   * you can start a conversation from.
+   */
+  async createChat(params: {
+    addresses: string[];
+    message: string;
+    service?: string;
+    method?: BBSendMethod;
+    tempGuid?: string;
+  }): Promise<BBChat & { guid: string }> {
+    return this.request<BBChat & { guid: string }>('POST', 'chat/new', {
+      json: {
+        addresses: params.addresses,
+        message: params.message,
+        service: params.service ?? 'iMessage',
+        method: params.method ?? 'private-api',
+        ...(params.tempGuid ? { tempGuid: params.tempGuid } : {}),
+      },
+      timeoutMs: 30_000,
+    });
+  }
+
   // ---- Contacts ----
 
   /**

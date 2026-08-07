@@ -6,6 +6,7 @@ import { Inbox, Users, Settings, Hash, Search, Plus, Filter } from 'lucide-react
 import { Logo } from '@/components/brand';
 import { UserMenu } from '@/components/app/user-menu';
 import { NotificationsBell } from '@/components/app/notifications-bell';
+import { NewConversationButton } from '@/components/inbox/new-conversation';
 import { motion } from '@/components/ui/motion';
 import { cn } from '@/lib/utils';
 
@@ -116,6 +117,7 @@ export function Sidebar({
       <div className="flex h-[52px] items-center justify-between px-3.5">
         <Logo size="sm" />
         <div className="flex items-center gap-0.5">
+          <NewConversationButton />
           <button
             type="button"
             onClick={() => window.dispatchEvent(new Event('comms:open-command'))}

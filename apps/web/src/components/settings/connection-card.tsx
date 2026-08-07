@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { RefreshCw, Webhook, Trash2, CheckCircle2, XCircle, Pencil } from 'lucide-react';
+import { RefreshCw, Webhook, Trash2, CheckCircle2, XCircle, Pencil, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,7 @@ import {
   reRegisterWebhook,
   disconnect,
   updateConnectionServerUrl,
+  syncContactsNow,
 } from '@/server/actions/connections';
 
 export function ConnectionCard({
@@ -150,6 +151,22 @@ export function ConnectionCard({
         >
           <Webhook className="h-3.5 w-3.5" />
           Re-register webhook
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending}
+          onClick={() =>
+            start(async () => {
+              const res = await syncContactsNow(connection.id);
+              if (res.ok)
+                toast.success('Syncing contacts from your Mac — names appear within a minute.');
+              else toast.error(res.error ?? 'Failed');
+            })
+          }
+        >
+          <Users className="h-3.5 w-3.5" />
+          Sync contacts
         </Button>
         <Button
           size="sm"
