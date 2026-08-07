@@ -10,8 +10,11 @@ import { Sidebar } from '@/components/app/sidebar';
 import { RealtimeProvider } from '@/components/app/realtime-provider';
 import { ChannelHealthBanner } from '@/components/app/channel-health-banner';
 import { CommandPalette } from '@/components/app/command-palette';
+import { KeymapProvider } from '@/components/app/keymap-provider';
+import { KeyboardShortcuts } from '@/components/app/keyboard-shortcuts';
 import { NewConversation } from '@/components/inbox/new-conversation';
 import { MobileTopBar, SidebarShell } from '@/components/app/mobile-shell';
+import type { KeymapPreference } from '@/lib/keymap';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <RealtimeProvider
       currentUser={{ id: user.id, name: user.name ?? null, image: user.image ?? null }}
     >
+      <KeymapProvider preference={user.preferences?.keymap as KeymapPreference | undefined}>
       <div className="flex h-dvh flex-col overflow-hidden">
         <ChannelHealthBanner initial={unhealthy} />
         <MobileTopBar />
@@ -79,6 +83,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         isAdmin={isAdminRole(user.role)}
       />
       <NewConversation />
+      {/* One listener for the whole app: `c`, ⌘K and the jump keys should work
+          from settings too, not only inside the inbox. */}
+      <KeyboardShortcuts />
+      </KeymapProvider>
     </RealtimeProvider>
   );
 }

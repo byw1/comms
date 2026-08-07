@@ -24,6 +24,7 @@ import { applyMacro } from '@/server/actions/macros';
 import { sendTypingIndicator } from '@/server/actions/imessage';
 import { SEND_LATER_PRESETS } from '@/lib/snooze';
 import { cn } from '@/lib/utils';
+import { useKeymap } from '@/components/app/keymap-provider';
 
 export function Composer({
   conversationId,
@@ -48,6 +49,7 @@ export function Composer({
    */
   onSubmit: (body: string, isNote: boolean, scheduledFor?: Date) => Promise<boolean>;
 }) {
+  const { enterSends } = useKeymap();
   const [body, setBody] = useState('');
   const [isNote, setIsNote] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -165,9 +167,15 @@ export function Composer({
       return;
     }
 
-    if (e.key === 'Enter' && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      submit();
+    if (e.key === 'Enter') {
+      // ⌘↵ always sends. Whether a bare ↵ sends or inserts a newline is the
+      // user's call — texting people usually want it to send, writing longer
+      // replies usually don't.
+      const withModifier = e.metaKey || e.ctrlKey;
+      if (withModifier || (enterSends && !e.shiftKey)) {
+        e.preventDefault();
+        submit();
+      }
     }
   }
 
@@ -389,15 +397,31 @@ export function Composer({
         </div>
       </div>
 
+      {/* The hint has to follow the setting, or it teaches the wrong key. */}
       <p className="hidden items-center gap-1 px-1.5 pt-1.5 text-[10.5px] text-muted-foreground md:flex">
-        <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">
-          <CornerDownLeft className="inline h-2.5 w-2.5" />
-        </kbd>
-        to send
-        <span className="opacity-40">·</span>
-        <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">Shift</kbd>+
-        <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">↵</kbd>
-        for a new line
+        {enterSends ? (
+          <>
+            <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">
+              <CornerDownLeft className="inline h-2.5 w-2.5" />
+            </kbd>
+            to send
+            <span className="opacity-40">·</span>
+            <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">Shift</kbd>+
+            <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">↵</kbd>
+            for a new line
+          </>
+        ) : (
+          <>
+            <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">⌘</kbd>+
+            <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">↵</kbd>
+            to send
+            <span className="opacity-40">·</span>
+            <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">
+              <CornerDownLeft className="inline h-2.5 w-2.5" />
+            </kbd>
+            for a new line
+          </>
+        )}
       </p>
     </div>
   );

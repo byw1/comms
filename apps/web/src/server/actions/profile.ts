@@ -89,3 +89,38 @@ export async function updateNotificationPreferences(patch: UserPreferences): Pro
   revalidatePath('/settings/preferences');
   return { ok: true };
 }
+
+/**
+ * Save keyboard shortcuts.
+ *
+ * Stored as a preset plus a diff rather than a full map: when a later version
+ * adds an action, everyone picks up its default binding instead of ending up
+ * with an action that has no keys and no way to discover that.
+ */
+export async function updateKeymap(input: {
+  preset: string;
+  overrides: Record<string, string[]>;
+  enterSends: boolean;
+}): Promise<ActionResult> {
+  const me = await requireUser();
+
+  const [row] = await db
+    .select({ preferences: users.preferences })
+    .from(users)
+    .where(eq(users.id, me.id));
+
+  const preferences: UserPreferences = {
+    ...(row?.preferences ?? {}),
+    keymap: {
+      preset: input.preset,
+      overrides: input.overrides,
+      enterSends: input.enterSends,
+    },
+  };
+
+  await db.update(users).set({ preferences }).where(eq(users.id, me.id));
+  revalidatePath('/settings/keyboard');
+  // Every screen carries the shortcut listener and the cheat sheet.
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}

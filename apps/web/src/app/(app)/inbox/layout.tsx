@@ -1,7 +1,6 @@
 import { requireUser } from '@/lib/session';
 import { listConversations, listInboxes, listTags, listAgents } from '@/server/queries';
 import { ConversationListPane } from '@/components/inbox/conversation-list';
-import { KeyboardShortcuts } from '@/components/app/keyboard-shortcuts';
 import { TagQuickPicker } from '@/components/inbox/tag-quick-picker';
 
 export const dynamic = 'force-dynamic';
@@ -29,7 +28,6 @@ export default async function InboxLayout({ children }: { children: React.ReactN
         inboxes={inboxRows.map((i) => ({ id: i.id, name: i.name }))}
       />
       <div className="flex min-w-0 flex-1 flex-col">{children}</div>
-      <KeyboardShortcuts />
       <TagQuickPicker
         allTags={tagRows.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
       />

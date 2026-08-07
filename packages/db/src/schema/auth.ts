@@ -12,18 +12,31 @@ export interface UserPreferences {
   notifyMentions?: boolean;
   /** Play a short tone when a new notification lands while the app is open. */
   notificationSound?: boolean;
+  /**
+   * Keyboard shortcuts. Stored as a preset plus a diff rather than a full map,
+   * so an action added in a later version picks up its default instead of
+   * silently having no binding.
+   *
+   * The shapes live in the web app (`@/lib/keymap`); the database only needs
+   * to carry them, so they stay loose here.
+   */
+  keymap?: {
+    preset?: string;
+    overrides?: Record<string, string[]>;
+    enterSends?: boolean;
+  };
 }
 
 /** Defaults applied when a user has never touched their notification settings. */
 export const notificationDefaults = {
   notifyMentions: true,
   notificationSound: false,
-} satisfies Required<UserPreferences>;
+} satisfies Omit<Required<UserPreferences>, 'keymap'>;
 
 /** Read a user's preferences with the defaults filled in for anything unset. */
 export function resolvePreferences(
   preferences: UserPreferences | null | undefined,
-): Required<UserPreferences> {
+): Omit<Required<UserPreferences>, 'keymap'> & Pick<UserPreferences, 'keymap'> {
   return { ...notificationDefaults, ...(preferences ?? {}) };
 }
 

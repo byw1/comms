@@ -38,27 +38,9 @@ export function NewConversation() {
       setActive(0);
       setOpen(true);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const el = document.activeElement;
-      const typing =
-        el &&
-        (el.tagName === 'INPUT' ||
-          el.tagName === 'TEXTAREA' ||
-          (el as HTMLElement).isContentEditable ||
-          document.querySelector('[role="dialog"][data-state="open"]'));
-      if (typing) return;
-      if (e.key === 'c') {
-        e.preventDefault();
-        onOpen();
-      }
-    };
+    // The `c` binding lives in the user's keymap and reaches us as an event.
     window.addEventListener('comms:new-conversation', onOpen);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('comms:new-conversation', onOpen);
-      window.removeEventListener('keydown', onKey);
-    };
+    return () => window.removeEventListener('comms:new-conversation', onOpen);
   }, []);
 
   useEffect(() => {

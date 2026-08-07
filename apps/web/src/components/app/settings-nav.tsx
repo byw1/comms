@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 const PERSONAL = [
   { href: '/settings/profile', label: 'Profile' },
   { href: '/settings/preferences', label: 'Preferences' },
+  { href: '/settings/keyboard', label: 'Shortcuts' },
 ];
 
 /** The workspace's: owner/admin only, and hidden entirely from agents. */

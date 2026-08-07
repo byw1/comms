@@ -36,20 +36,18 @@ export function CommandPalette({
   const [active, setActive] = useState(0);
   const [, startSearch] = useTransition();
 
-  // Global ⌘K / Ctrl+K, and an in-app open event (from the sidebar button).
+  // The keyboard binding lives in the user's keymap, not here — a second
+  // keydown listener would double-fire and break sequence shortcuts. This
+  // component just responds to being asked to open (by key, or by the sidebar
+  // button).
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setOpen((o) => !o);
-      }
-    };
     const onOpen = () => setOpen(true);
-    window.addEventListener('keydown', onKey);
+    const onToggle = () => setOpen((o) => !o);
     window.addEventListener('comms:open-command', onOpen);
+    window.addEventListener('comms:open-palette', onToggle);
     return () => {
-      window.removeEventListener('keydown', onKey);
       window.removeEventListener('comms:open-command', onOpen);
+      window.removeEventListener('comms:open-palette', onToggle);
     };
   }, []);
 
