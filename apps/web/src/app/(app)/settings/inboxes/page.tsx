@@ -3,6 +3,8 @@ import { Plus } from 'lucide-react';
 import { listInboxes } from '@/server/queries';
 import { Button } from '@/components/ui/button';
 import { ConnectBlueBubbles } from '@/components/settings/connect-bluebubbles';
+import { InboxActions } from '@/components/settings/inbox-actions';
+import { getInboxSummary } from '@/server/actions/inboxes';
 import { ConnectionCard } from '@/components/settings/connection-card';
 import { InboxSettings } from '@/components/settings/inbox-settings';
 
@@ -10,6 +12,12 @@ export const dynamic = 'force-dynamic';
 
 export default async function InboxesSettingsPage() {
   const inboxes = await listInboxes();
+
+  // Per-inbox history counts, so a delete can warn about exactly what it costs.
+  const summaries = await Promise.all(inboxes.map((i) => getInboxSummary(i.id)));
+  const counts = Object.fromEntries(
+    summaries.filter((s): s is NonNullable<typeof s> => Boolean(s)).map((s) => [s.id, s]),
+  );
 
   return (
     <div className="space-y-6">
@@ -47,17 +55,47 @@ export default async function InboxesSettingsPage() {
         <div className="space-y-4">
           {inboxes.map((inbox) => (
             <div key={inbox.id} className="space-y-3">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-medium">{inbox.name}</h3>
                 {inbox.isDefault && (
                   <span className="rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
                     Default
                   </span>
                 )}
+                {inbox.connections.length === 0 && (
+                  <span className="rounded-full bg-warning-muted px-2 py-0.5 text-xs font-medium text-warning">
+                    Not connected
+                  </span>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  {counts[inbox.id]?.conversationCount ?? 0} conversation
+                  {(counts[inbox.id]?.conversationCount ?? 0) === 1 ? '' : 's'}
+                </span>
+                <div className="ml-auto">
+                  <InboxActions
+                    inbox={{
+                      id: inbox.id,
+                      name: inbox.name,
+                      conversationCount: counts[inbox.id]?.conversationCount ?? 0,
+                      messageCount: counts[inbox.id]?.messageCount ?? 0,
+                      hasConnection: inbox.connections.length > 0,
+                    }}
+                    otherInboxes={inboxes
+                      .filter((o) => o.id !== inbox.id)
+                      .map((o) => ({ id: o.id, name: o.name }))}
+                  />
+                </div>
               </div>
               <InboxSettings inboxId={inbox.id} settings={inbox.settings} />
               {inbox.connections.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No connection.</p>
+                <div className="rounded-xl border border-dashed border-warning/40 bg-warning-muted/40 p-3.5 text-sm">
+                  <p className="font-medium">This inbox has no channel connected.</p>
+                  <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                    It usually means the connection was removed. If this is a leftover duplicate,
+                    use <strong>Merge into…</strong> to move its conversations into your live inbox,
+                    or <strong>Delete inbox</strong> if it&apos;s empty.
+                  </p>
+                </div>
               ) : (
                 inbox.connections.map((c) => (
                   <ConnectionCard

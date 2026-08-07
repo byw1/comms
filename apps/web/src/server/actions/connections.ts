@@ -24,7 +24,14 @@ import { requireAdmin } from '@/lib/session';
 const log = logger.child({ action: 'connections' });
 
 export type ConnectResult =
-  | { ok: true; connectionId: string; privateApi: boolean; webhookRegistered: boolean }
+  | {
+      ok: true;
+      connectionId: string;
+      privateApi: boolean;
+      webhookRegistered: boolean;
+      /** True when we reattached to an existing inbox instead of making a new one. */
+      adopted: boolean;
+    }
   | { ok: false; error: string };
 
 /**
@@ -62,18 +69,43 @@ export async function connectBlueBubbles(input: {
     return { ok: false, error: describeConnectionError(err, serverUrl) };
   }
 
-  // 2. Create the inbox (default if it's the first one).
-  const [countRow] = await db.select({ value: count() }).from(inboxes);
-  const inboxCount = Number(countRow?.value ?? 0);
-  const [inbox] = await db
-    .insert(inboxes)
-    .values({
-      name: input.name.trim() || 'iMessage',
-      channelType: 'imessage',
-      isDefault: inboxCount === 0,
-      settings: { markReadOnReply: false, sendTypingIndicators: privateApi },
-    })
-    .returning();
+  // 2. Reuse an orphaned inbox if there is one, otherwise create.
+  //
+  //    Disconnecting removes the connection but leaves the inbox (it still
+  //    owns the conversation history). Without this, reconnecting the same
+  //    number produced a SECOND inbox and stranded the history in the first —
+  //    the single most confusing thing this app could do.
+  const allInboxes = await db.query.inboxes.findMany({ with: { connections: true } });
+  const orphan = allInboxes.find((i) => i.connections.length === 0);
+
+  let inbox: typeof inboxes.$inferSelect | undefined;
+  let adopted = false;
+
+  if (orphan) {
+    const [updated] = await db
+      .update(inboxes)
+      .set({
+        name: input.name.trim() || orphan.name,
+        settings: { ...orphan.settings, sendTypingIndicators: privateApi },
+      })
+      .where(eq(inboxes.id, orphan.id))
+      .returning();
+    inbox = updated;
+    adopted = true;
+  } else {
+    const [countRow] = await db.select({ value: count() }).from(inboxes);
+    const inboxCount = Number(countRow?.value ?? 0);
+    const [created] = await db
+      .insert(inboxes)
+      .values({
+        name: input.name.trim() || 'iMessage',
+        channelType: 'imessage',
+        isDefault: inboxCount === 0,
+        settings: { markReadOnReply: false, sendTypingIndicators: privateApi },
+      })
+      .returning();
+    inbox = created;
+  }
   if (!inbox) return { ok: false, error: 'Failed to create inbox.' };
 
   // 3. Persist the connection with the encrypted password.
@@ -120,7 +152,7 @@ export async function connectBlueBubbles(input: {
 
   revalidatePath('/settings/inboxes');
   revalidatePath('/inbox');
-  return { ok: true, connectionId: connection.id, privateApi, webhookRegistered };
+  return { ok: true, connectionId: connection.id, privateApi, webhookRegistered, adopted };
 }
 
 /**
