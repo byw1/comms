@@ -46,7 +46,9 @@ export type MaintenanceJob =
   /** Pull contacts (names + avatars) from the Mac's address book. */
   | { type: 'contactSync'; connectionId: string }
   /** Reset blank names written before the empty-string fallthrough was fixed. */
-  | { type: 'repairNames' };
+  | { type: 'repairNames' }
+  /** Attach contacts to conversations that never got one from a message handle. */
+  | { type: 'repairContacts' };
 
 /**
  * Background AI work. `precompute` runs on every inbound message so the draft

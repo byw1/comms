@@ -1,16 +1,14 @@
-import { getDb, eq, and } from '@comms/db';
+import { getDb, eq, and, isNull } from '@comms/db';
 import {
   conversations,
   messages,
   attachments,
   contacts,
-  contactIdentities,
   channelConnections,
 } from '@comms/db';
 import {
   type BBMessage,
   bbDate,
-  normalizeAddress,
   parseChatGuid,
   reactionFromAssociatedType,
   isVoiceMemoAttachment,
@@ -20,6 +18,11 @@ import {
   logger,
 } from '@comms/core';
 import { isAiEnabled } from '@comms/ai';
+import {
+  linkParticipants,
+  resolveContact,
+  resolveConversationContact,
+} from './participants.js';
 import { maybeAutoAssign } from './assign.js';
 import { onInboundSlaCsat } from './sla.js';
 import { runAutomations } from './automations.js';
@@ -60,31 +63,6 @@ async function handleOptKeywords(
     sentAt: new Date(),
   });
   log.info({ contactId, optedOut: isOut }, 'opt keyword processed');
-}
-
-/** Find-or-create a contact for an iMessage handle address. */
-async function resolveContact(address: string, displayName?: string | null): Promise<string> {
-  const db = getDb();
-  const norm = normalizeAddress(address);
-
-  const existing = await db.query.contactIdentities.findFirst({
-    where: and(eq(contactIdentities.kind, norm.kind), eq(contactIdentities.value, norm.value)),
-  });
-  if (existing) return existing.contactId;
-
-  const [contact] = await db
-    .insert(contacts)
-    // Fall back to the address when the chat has no (or an empty) display name.
-    .values({ displayName: displayName?.trim() || norm.raw })
-    .returning({ id: contacts.id });
-  const contactId = contact!.id;
-
-  await db
-    .insert(contactIdentities)
-    .values({ contactId, kind: norm.kind, value: norm.value, rawValue: norm.raw })
-    .onConflictDoNothing();
-
-  return contactId;
 }
 
 /** Upsert the conversation for a chat GUID within an inbox. */
@@ -242,15 +220,41 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
     }
   }
 
-  const contactId = bb.isFromMe
+  const chat = bb.chats?.[0];
+
+  // Who the CONVERSATION belongs to, derived from the chat — never from this
+  // message. An outbound message has no handle, so message-derived resolution
+  // left every thread we spoke in first with no contact at all.
+  const conversationContactId = await resolveConversationContact(chatGuid, chat);
+
+  // Who wrote THIS message. Only inbound messages have an author contact.
+  const authorContactId = bb.isFromMe
     ? null
     : bb.handle?.address
-      ? await resolveContact(bb.handle.address, bb.chats?.[0]?.displayName)
-      : null;
+      ? ((await resolveContact(bb.handle.address, chat?.displayName))?.contactId ??
+        conversationContactId)
+      : conversationContactId;
 
-  const { conversation, created } = await ensureConversation(conn.inboxId, chatGuid, contactId, {
-    title: bb.chats?.[0]?.displayName,
-  });
+  const { conversation, created } = await ensureConversation(
+    conn.inboxId,
+    chatGuid,
+    conversationContactId,
+    { title: chat?.displayName },
+  );
+
+  // Self-heal rows created before the chat became the source of truth, and
+  // rows whose first message arrived before the chat carried participants.
+  if (!conversation.contactId && conversationContactId) {
+    await db
+      .update(conversations)
+      .set({ contactId: conversationContactId })
+      .where(and(eq(conversations.id, conversation.id), isNull(conversations.contactId)));
+    conversation.contactId = conversationContactId;
+  }
+
+  await linkParticipants(conversation.id, chatGuid, chat).catch((err) =>
+    log.warn({ err: (err as Error).message, chatGuid }, 'could not record participants'),
+  );
 
   const [msg] = await db
     .insert(messages)
@@ -259,7 +263,7 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
       providerMessageGuid: bb.guid,
       direction: bb.isFromMe ? 'outbound' : 'inbound',
       authorType: bb.isFromMe ? 'external' : 'contact',
-      authorContactId: contactId,
+      authorContactId,
       body: bb.text ?? null,
       subject: bb.subject ?? null,
       status: bb.isFromMe ? 'sent' : 'delivered',
@@ -313,8 +317,8 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
 
   // SLA clock / CSAT capture + per-message automations on every inbound message.
   if (isInbound) {
-    if (contactId && bb.text) {
-      await handleOptKeywords(conversation.id, contactId, bb.text).catch(() => {});
+    if (authorContactId && bb.text) {
+      await handleOptKeywords(conversation.id, authorContactId, bb.text).catch(() => {});
     }
     await onInboundSlaCsat(conversation.id, conversation, bb.text).catch(() => {});
     await runAutomations('message_received', conversation.id, { bodyText: bb.text }).catch(() => {});

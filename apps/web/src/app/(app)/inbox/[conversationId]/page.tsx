@@ -12,7 +12,7 @@ import { ThreadShell } from '@/components/inbox/thread-shell';
 import { TicketPanel } from '@/components/inbox/ticket-panel';
 import { ConversationHeader } from '@/components/inbox/conversation-header';
 import { DetailsPaneShell } from '@/components/app/mobile-shell';
-import { conversationName, formatAddress } from '@/lib/naming';
+import { addressFromChatGuid, conversationName, formatAddress } from '@/lib/naming';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,9 +40,14 @@ export default async function ConversationPage({
   const contactName = conversationName({
     contactName: conversation.contact?.displayName,
     contactAddress: conversation.contact?.identities?.[0]?.value,
+    chatGuid: conversation.providerChatGuid,
     title: conversation.title,
     isGroup: conversation.isGroup,
   });
+  const contactIdentities =
+    conversation.contact?.identities
+      ?.map((i) => formatAddress(i.rawValue ?? i.value) ?? i.value)
+      .filter((v): v is string => Boolean(v)) ?? [];
   const aiEnabled = loadConfig().aiEnabled;
   const ai = (
     conversation.metadata as {
@@ -107,10 +112,13 @@ export default async function ConversationPage({
           priority: conversation.priority,
           assigneeId: conversation.assigneeId,
           contactName,
-          contactIdentities:
-            conversation.contact?.identities
-              ?.map((i) => formatAddress(i.rawValue ?? i.value) ?? i.value)
-              .filter((v): v is string => Boolean(v)) ?? [],
+          contactIdentities: contactIdentities.length
+            ? contactIdentities
+            : // Fall back to the address in the chat GUID rather than claiming
+              // we have no contact info for a thread we can clearly reply to.
+              [formatAddress(addressFromChatGuid(conversation.providerChatGuid))].filter(
+                (v): v is string => Boolean(v),
+              ),
           inboxName: conversation.inbox?.name ?? 'Inbox',
           tagIds: conversation.tags?.map((t) => t.tag.id) ?? [],
         }}

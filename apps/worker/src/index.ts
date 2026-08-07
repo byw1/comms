@@ -103,12 +103,14 @@ async function main() {
     }
   };
 
-  // Blank names left by the old empty-string bug are repaired on boot rather
-  // than at the next contact sync — an hour of unlabelled rows is an hour too
-  // many, and the repair is three no-op UPDATEs once the data is clean.
-  await enqueueMaintenance({ type: 'repairNames' }).catch((err) =>
-    log.warn({ err: (err as Error).message }, 'could not enqueue name repair'),
-  );
+  // Data left broken by earlier bugs is repaired on boot rather than at the
+  // next contact sync — an hour of rows labelled "Unknown contact" is an hour
+  // too many, and both repairs are no-ops once the data is clean.
+  for (const type of ['repairNames', 'repairContacts'] as const) {
+    await enqueueMaintenance({ type }).catch((err) =>
+      log.warn({ err: (err as Error).message, type }, 'could not enqueue repair'),
+    );
+  }
 
   await sweep();
   const interval = setInterval(() => void sweep(), 60_000);

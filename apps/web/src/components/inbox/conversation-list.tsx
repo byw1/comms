@@ -311,6 +311,8 @@ export function ConversationListPane({
               const nameInput = {
                 contactName: c.contact?.displayName,
                 contactAddress: c.contact?.identities?.[0]?.value,
+                // The GUID carries the number even when no contact was linked.
+                chatGuid: c.providerChatGuid,
                 title: c.title,
                 isGroup: c.isGroup,
               };

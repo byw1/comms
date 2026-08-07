@@ -35,14 +35,46 @@ export function formatAddress(address: string | null | undefined): string | null
   return raw.startsWith('+') ? raw : digits.length > 6 ? `+${digits}` : raw;
 }
 
+/**
+ * The address embedded in a BlueBubbles chat GUID (`iMessage;-;+15551234567`).
+ *
+ * This is the last line of defence for naming: it needs no contact row, no
+ * join, and no network call, because every conversation stores its GUID. A
+ * thread should never render as "Unknown contact" while the number is sitting
+ * right there in a column we already have.
+ *
+ * Kept dependency-free rather than imported from @comms/core so this module
+ * stays safe to use from client components.
+ */
+export function addressFromChatGuid(guid: string | null | undefined): string | null {
+  const raw = present(guid);
+  if (!raw) return null;
+  const parts = raw.split(';');
+  if (parts.length < 3) return null;
+  if (parts[1] === '+') return null; // group: the identifier is an opaque id
+  const identifier = present(parts.slice(2).join(';'));
+  if (!identifier || /^chat\d+$/i.test(identifier)) return null;
+  return identifier;
+}
+
 export interface NameableConversation {
   contactName?: string | null;
   /** The contact's first known address, used when there's no name. */
   contactAddress?: string | null;
+  /**
+   * The provider chat GUID. Carries the address for a 1:1 thread, so naming
+   * still works when contact resolution failed entirely.
+   */
+  chatGuid?: string | null;
   title?: string | null;
   isGroup?: boolean | null;
   /** Group participant names/addresses, for building "Ana, Ben +2". */
   participants?: Array<string | null | undefined>;
+}
+
+/** Best address we know for a 1:1 thread, contact row or not. */
+export function conversationAddress(c: NameableConversation): string | null {
+  return present(c.contactAddress) ?? addressFromChatGuid(c.chatGuid);
 }
 
 /** The label to show for a conversation. Never returns an empty string. */
@@ -64,7 +96,7 @@ export function conversationName(c: NameableConversation): string {
   }
 
   // A phone number beats a generic placeholder for a 1:1 thread.
-  const address = formatAddress(c.contactAddress);
+  const address = formatAddress(conversationAddress(c));
   if (address) return address;
   if (title) return title;
   return 'Unknown contact';
@@ -74,7 +106,7 @@ export function conversationName(c: NameableConversation): string {
 export function nameForInitials(c: NameableConversation): string {
   const contactName = present(c.contactName);
   if (contactName) return contactName;
-  const digits = present(c.contactAddress)?.replace(/\D/g, '');
+  const digits = conversationAddress(c)?.replace(/\D/g, '');
   // Last two digits read better than "UN" repeated down the list.
   if (digits && digits.length >= 2) return digits.slice(-2);
   return present(c.title) ?? '?';

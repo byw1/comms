@@ -11,6 +11,7 @@ import {
   logger,
 } from '@comms/core';
 import { repairBlankNames, syncContacts } from '../lib/contacts.js';
+import { backfillParticipants, repairContactlessConversations } from '../lib/participants.js';
 import { getDb, eq, and, lte, inArray, isNotNull } from '@comms/db';
 import {
   channelConnections,
@@ -165,10 +166,14 @@ async function backfill(connectionId: string, since?: number) {
         // ingestNewMessage dedups by provider guid, so re-runs are safe.
         // `??` would keep an EMPTY array, leaving chats[0] undefined and
         // making ingest drop the message as "not from a chat".
-        await ingestNewMessage(connectionId, {
-          ...m,
-          chats: m.chats?.length ? m.chats : [chat],
-        });
+        const msgChats = m.chats?.length ? m.chats : [chat];
+        // The message query returns chats without participants; the chat query
+        // above asked for them. Carry them over, or ingest can't name a group.
+        const first = msgChats[0];
+        if (first && first.guid === chat.guid && !first.participants?.length) {
+          msgChats[0] = { ...first, participants: chat.participants };
+        }
+        await ingestNewMessage(connectionId, { ...m, chats: msgChats });
         ingested += 1;
       }
     } catch (err) {
@@ -341,5 +346,9 @@ export async function processMaintenance(job: Job<MaintenanceJob>): Promise<void
       return checkSlaBreaches();
     case 'repairNames':
       return repairBlankNames();
+    case 'repairContacts':
+      await repairContactlessConversations();
+      await backfillParticipants();
+      return;
   }
 }

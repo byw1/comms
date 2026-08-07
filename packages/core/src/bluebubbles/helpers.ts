@@ -11,6 +11,27 @@ export function parseChatGuid(guid: string): {
   return { service, isGroup: type === '+', identifier };
 }
 
+/**
+ * The other party's address for a direct chat, read out of the chat GUID.
+ *
+ * A GUID is `service;type;identifier`, and for a 1:1 chat the identifier IS the
+ * handle — `iMessage;-;+15551234567`. That means a conversation can always name
+ * who it's with, even when every message we've seen is outbound (outbound
+ * messages carry no handle at all).
+ *
+ * Group GUIDs carry an opaque `chat123456` id instead of an address, so they
+ * return null — a group has participants, not a single counterparty.
+ */
+export function addressFromChatGuid(guid: string): string | null {
+  const { isGroup, identifier } = parseChatGuid(guid);
+  if (isGroup) return null;
+  const id = identifier.trim();
+  if (!id) return null;
+  // Some direct chats still carry a chat-style identifier; it isn't an address.
+  if (/^chat\d+$/i.test(id)) return null;
+  return id;
+}
+
 export type NormalizedIdentity = {
   kind: 'phone' | 'email' | 'handle';
   value: string;

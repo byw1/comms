@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { conversationName, formatAddress, nameForInitials } from '../src/lib/naming';
+import {
+  addressFromChatGuid,
+  conversationAddress,
+  conversationName,
+  formatAddress,
+  nameForInitials,
+} from '../src/lib/naming';
 
 describe('conversationName', () => {
   it('never returns an empty string when the name is blank — the blank-row bug', () => {
@@ -70,5 +76,55 @@ describe('nameForInitials', () => {
 
   it('uses trailing digits rather than a generic placeholder', () => {
     expect(nameForInitials({ contactAddress: '+15551234567' })).toBe('67');
+  });
+});
+
+describe('addressFromChatGuid — the "Unknown contact" fix', () => {
+  it('reads the number out of a 1:1 chat guid', () => {
+    expect(addressFromChatGuid('iMessage;-;+15551234567')).toBe('+15551234567');
+    expect(addressFromChatGuid('SMS;-;+15551234567')).toBe('+15551234567');
+  });
+
+  it('reads an email handle', () => {
+    expect(addressFromChatGuid('iMessage;-;jordan@acme.com')).toBe('jordan@acme.com');
+  });
+
+  it('returns null for a group, whose identifier is an opaque id', () => {
+    expect(addressFromChatGuid('iMessage;+;chat483920174')).toBeNull();
+    // Some group chats arrive with a '-' type but still carry a chat id.
+    expect(addressFromChatGuid('iMessage;-;chat483920174')).toBeNull();
+  });
+
+  it('returns null for junk', () => {
+    expect(addressFromChatGuid('')).toBeNull();
+    expect(addressFromChatGuid(null)).toBeNull();
+    expect(addressFromChatGuid('iMessage;-;')).toBeNull();
+    expect(addressFromChatGuid('nonsense')).toBeNull();
+  });
+});
+
+describe('naming survives a conversation with no contact row at all', () => {
+  // This is the exact production case: every ingested message was outbound, so
+  // no handle was ever seen and contact_id stayed null.
+  const orphan = { contactName: null, contactAddress: null, chatGuid: 'iMessage;-;+15551234567' };
+
+  it('shows the number instead of "Unknown contact"', () => {
+    expect(conversationName(orphan)).toBe('(555) 123-4567');
+  });
+
+  it('still gives real initials', () => {
+    expect(nameForInitials(orphan)).toBe('67');
+  });
+
+  it('prefers a linked contact address when one exists', () => {
+    expect(
+      conversationAddress({ contactAddress: '+15559876543', chatGuid: 'iMessage;-;+15551234567' }),
+    ).toBe('+15559876543');
+  });
+
+  it('does not invent an address for a group', () => {
+    expect(conversationName({ isGroup: true, chatGuid: 'iMessage;+;chat483920174' })).toBe(
+      'Group conversation',
+    );
   });
 });
