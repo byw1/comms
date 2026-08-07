@@ -1,5 +1,5 @@
-import { getDb, eq, and, inArray, isNull, sql } from '@comms/db';
-import { contacts, contactIdentities, channelConnections } from '@comms/db';
+import { getDb, eq, and } from '@comms/db';
+import { contacts, contactIdentities, channelConnections, conversations } from '@comms/db';
 import {
   type BBContact,
   normalizeAddress,
@@ -269,6 +269,18 @@ export async function syncContacts(connectionId: string): Promise<ContactSyncRes
       avatarUrl: null,
     });
   }
+
+  // Repair rows written before the empty-string bug was fixed: a blank title
+  // or display name renders as an unlabelled row forever otherwise.
+  await db
+    .update(conversations)
+    .set({ title: null })
+    .where(and(eq(conversations.title, ''), eq(conversations.isGroup, false)));
+  await db
+    .update(conversations)
+    .set({ title: 'Group conversation' })
+    .where(and(eq(conversations.title, ''), eq(conversations.isGroup, true)));
+  await db.update(contacts).set({ displayName: null }).where(eq(contacts.displayName, ''));
 
   await db
     .update(channelConnections)

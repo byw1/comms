@@ -112,7 +112,10 @@ async function ensureConversation(
       providerChatGuid: chatGuid,
       contactId,
       isGroup: parsed.isGroup,
-      title: meta.title ?? (parsed.isGroup ? 'Group conversation' : null),
+      // `||` not `??`: BlueBubbles sends an EMPTY STRING for any chat the user
+      // never named, and `'' ?? x` keeps the empty string — which rendered as a
+      // blank row all the way through the UI.
+      title: meta.title?.trim() || (parsed.isGroup ? 'Group conversation' : null),
     })
     .onConflictDoNothing()
     .returning();
@@ -190,7 +193,12 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
 
   const chatGuid = bb.chats?.[0]?.guid;
   if (!chatGuid) {
-    log.warn({ guid: bb.guid }, 'new-message without a chat; skipping');
+    // Loud, with enough context to tell a genuinely chat-less event from a
+    // payload-shape problem — this used to silently swallow messages.
+    log.warn(
+      { guid: bb.guid, chatCount: bb.chats?.length ?? 0, isFromMe: bb.isFromMe },
+      'message without a resolvable chat guid; skipping',
+    );
     return;
   }
 

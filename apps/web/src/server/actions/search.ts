@@ -63,7 +63,7 @@ export async function searchConversations(term: string): Promise<SearchHit[]> {
   return rows.map((c) => ({
     id: c.id,
     number: c.number,
-    title: c.contact?.displayName ?? c.title ?? 'Unknown',
+    title: c.contact?.displayName?.trim() || c.title?.trim() || 'Unknown contact',
     preview: c.lastMessagePreview ?? '',
     lastMessageAt: c.lastMessageAt ? c.lastMessageAt.toISOString() : null,
   }));

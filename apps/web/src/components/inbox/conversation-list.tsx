@@ -13,6 +13,7 @@ import { AnimatePresence, motion } from '@/components/ui/motion';
 import { bulkUpdateConversations } from '@/server/actions/inbox';
 import { FilterBar } from '@/components/inbox/filter-bar';
 import { setVisibleConversationIds } from '@/lib/inbox-nav';
+import { conversationName, nameForInitials } from '@/lib/naming';
 import { cn, initials } from '@/lib/utils';
 import { listTime, relativeTime } from '@/lib/format';
 import type { ConversationListItem } from '@/server/queries';
@@ -106,9 +107,10 @@ export function ConversationListPane({
         if (!tagFilter.every((id) => ids.has(id))) return false;
       }
       if (query) {
+        // Search the address too, so typing a phone number finds the thread.
         const hay = `${c.contact?.displayName ?? ''} ${c.title ?? ''} ${
-          c.lastMessagePreview ?? ''
-        }`.toLowerCase();
+          c.contact?.identities?.map((i) => `${i.value} ${i.rawValue ?? ''}`).join(' ') ?? ''
+        } ${c.lastMessagePreview ?? ''}`.toLowerCase();
         if (!hay.includes(query.toLowerCase())) return false;
       }
       return true;
@@ -306,7 +308,13 @@ export function ConversationListPane({
             {filtered.map((c) => {
               const active = c.id === activeId;
               const isSelected = selected.has(c.id);
-              const name = c.contact?.displayName ?? c.title ?? 'Unknown';
+              const nameInput = {
+                contactName: c.contact?.displayName,
+                contactAddress: c.contact?.identities?.[0]?.value,
+                title: c.title,
+                isGroup: c.isGroup,
+              };
+              const name = conversationName(nameInput);
               const unread = c.unreadCount > 0;
               const hasMeta =
                 unread ||
@@ -350,7 +358,7 @@ export function ConversationListPane({
                             : 'bg-secondary text-muted-foreground',
                         )}
                       >
-                        {initials(name)}
+                        {initials(nameForInitials(nameInput))}
                       </AvatarFallback>
                     </Avatar>
 

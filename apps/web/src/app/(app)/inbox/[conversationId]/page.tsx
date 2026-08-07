@@ -12,6 +12,7 @@ import { ThreadShell } from '@/components/inbox/thread-shell';
 import { TicketPanel } from '@/components/inbox/ticket-panel';
 import { ConversationHeader } from '@/components/inbox/conversation-header';
 import { DetailsPaneShell } from '@/components/app/mobile-shell';
+import { conversationName, formatAddress } from '@/lib/naming';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +37,12 @@ export default async function ConversationPage({
   // API; hide the affordances entirely when the Mac can't deliver them.
   const canReact = Boolean(connection?.capabilities?.privateApi);
 
-  const contactName = conversation.contact?.displayName ?? conversation.title ?? 'Unknown';
+  const contactName = conversationName({
+    contactName: conversation.contact?.displayName,
+    contactAddress: conversation.contact?.identities?.[0]?.value,
+    title: conversation.title,
+    isGroup: conversation.isGroup,
+  });
   const aiEnabled = loadConfig().aiEnabled;
   const ai = (
     conversation.metadata as {
@@ -101,7 +107,10 @@ export default async function ConversationPage({
           priority: conversation.priority,
           assigneeId: conversation.assigneeId,
           contactName,
-          contactIdentities: conversation.contact?.identities?.map((i) => i.value) ?? [],
+          contactIdentities:
+            conversation.contact?.identities
+              ?.map((i) => formatAddress(i.rawValue ?? i.value) ?? i.value)
+              .filter((v): v is string => Boolean(v)) ?? [],
           inboxName: conversation.inbox?.name ?? 'Inbox',
           tagIds: conversation.tags?.map((t) => t.tag.id) ?? [],
         }}

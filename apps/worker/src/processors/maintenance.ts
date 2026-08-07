@@ -163,7 +163,12 @@ async function backfill(connectionId: string, since?: number) {
       });
       for (const m of msgs) {
         // ingestNewMessage dedups by provider guid, so re-runs are safe.
-        await ingestNewMessage(connectionId, { ...m, chats: m.chats ?? [chat] });
+        // `??` would keep an EMPTY array, leaving chats[0] undefined and
+        // making ingest drop the message as "not from a chat".
+        await ingestNewMessage(connectionId, {
+          ...m,
+          chats: m.chats?.length ? m.chats : [chat],
+        });
         ingested += 1;
       }
     } catch (err) {

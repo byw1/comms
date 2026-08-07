@@ -98,7 +98,12 @@ export async function listConversations(filter: ConversationFilter = {}) {
     orderBy: orderFor(filter.sort),
     limit: 100,
     with: {
-      contact: { columns: { id: true, displayName: true, avatarUrl: true } },
+      // Identities come along so an unnamed thread can show the phone number
+      // instead of a blank row.
+      contact: {
+        columns: { id: true, displayName: true, avatarUrl: true },
+        with: { identities: { columns: { value: true, rawValue: true } } },
+      },
       assignee: { columns: { id: true, name: true, image: true } },
       inbox: { columns: { id: true, name: true, color: true } },
       tags: { with: { tag: true } },
