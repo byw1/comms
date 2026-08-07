@@ -12,6 +12,10 @@ import {
   enqueueMaintenance,
   COMMS_WEBHOOK_EVENTS,
   COMMS_WEBHOOK_VERSION,
+  checkServerUrl,
+  describeConnectionError,
+  diagnoseConnectionError,
+  type ConnectionProblem,
   logger,
 } from '@comms/core';
 import { db } from '@/server/db';
@@ -37,7 +41,12 @@ export async function connectBlueBubbles(input: {
 
   const serverUrl = input.serverUrl.trim().replace(/\/+$/, '');
   const password = input.password.trim();
-  if (!serverUrl || !password) return { ok: false, error: 'Server URL and password are required.' };
+  if (!password) return { ok: false, error: 'The BlueBubbles password is required.' };
+
+  // Catch addresses that can never work from a hosted deployment before we
+  // waste a request and surface an opaque "fetch failed".
+  const urlProblem = checkServerUrl(serverUrl);
+  if (urlProblem) return { ok: false, error: `${urlProblem.message} ${urlProblem.hint}` };
 
   // 1. Validate by hitting the server.
   const probe = new BlueBubblesClient({ serverUrl, password });
@@ -50,10 +59,7 @@ export async function connectBlueBubbles(input: {
     serverVersion = info.server_version;
     osVersion = info.os_version;
   } catch (err) {
-    return {
-      ok: false,
-      error: `Could not reach the BlueBubbles server: ${(err as Error).message}`,
-    };
+    return { ok: false, error: describeConnectionError(err, serverUrl) };
   }
 
   // 2. Create the inbox (default if it's the first one).
@@ -141,9 +147,8 @@ export async function updateConnectionServerUrl(input: {
   if (!conn) return { ok: false, error: 'Connection not found.' };
 
   const serverUrl = input.serverUrl.trim().replace(/\/+$/, '');
-  if (!/^https?:\/\//.test(serverUrl)) {
-    return { ok: false, error: 'Server URL must start with http:// or https://' };
-  }
+  const urlProblem = checkServerUrl(serverUrl);
+  if (urlProblem) return { ok: false, error: `${urlProblem.message} ${urlProblem.hint}` };
   const password = input.password?.trim() || decryptSecret(conn.credentialsEncrypted, cfg.appSecret);
 
   // 1. Verify the new address actually answers with these credentials before
@@ -158,10 +163,7 @@ export async function updateConnectionServerUrl(input: {
     serverVersion = info.server_version;
     osVersion = info.os_version;
   } catch (err) {
-    return {
-      ok: false,
-      error: `Could not reach BlueBubbles at the new URL: ${(err as Error).message}`,
-    };
+    return { ok: false, error: describeConnectionError(err, serverUrl) };
   }
 
   // 2. Persist the move. Same row, same inbox, same webhook secret.
@@ -214,7 +216,7 @@ export async function updateConnectionServerUrl(input: {
 
 export type VerifyResult =
   | { ok: true; privateApi: boolean; serverVersion?: string; macosVersion?: string }
-  | { ok: false; problem: 'url' | 'password' | 'unreachable' | 'timeout'; message: string; hint: string };
+  | { ok: false; problem: ConnectionProblem; message: string; hint: string };
 
 /**
  * Check a URL + password WITHOUT saving anything, and translate whatever went
@@ -231,21 +233,9 @@ export async function verifyBlueBubbles(input: {
   const serverUrl = input.serverUrl.trim().replace(/\/+$/, '');
   const password = input.password.trim();
 
-  if (!serverUrl) {
-    return {
-      ok: false,
-      problem: 'url',
-      message: 'You need to paste the web address first.',
-      hint: 'In BlueBubbles on your Mac, look for the address under the connection settings — it usually ends in .trycloudflare.com or .ngrok.io',
-    };
-  }
-  if (!/^https?:\/\//i.test(serverUrl)) {
-    return {
-      ok: false,
-      problem: 'url',
-      message: 'That address is missing the https:// at the front.',
-      hint: `Try using: https://${serverUrl.replace(/^\/+/, '')}`,
-    };
+  const urlProblem = checkServerUrl(serverUrl);
+  if (urlProblem) {
+    return { ok: false, problem: urlProblem.problem, message: urlProblem.message, hint: urlProblem.hint };
   }
   if (!password) {
     return {
@@ -265,31 +255,8 @@ export async function verifyBlueBubbles(input: {
       macosVersion: info.os_version,
     };
   } catch (err) {
-    const raw = (err as Error).message ?? '';
-    const status = (err as { status?: number }).status;
-
-    if (status === 401 || status === 403 || /unauthor|forbidden|password/i.test(raw)) {
-      return {
-        ok: false,
-        problem: 'password',
-        message: "That password doesn't match the one on your Mac.",
-        hint: 'Open BlueBubbles on your Mac and check the password field. Watch for autocorrect capitalising the first letter.',
-      };
-    }
-    if (status === 408 || /timed out|timeout|abort/i.test(raw)) {
-      return {
-        ok: false,
-        problem: 'timeout',
-        message: 'Your Mac took too long to answer.',
-        hint: 'Is the Mac awake and connected to the internet? Wake it up, make sure BlueBubbles is running, then try again.',
-      };
-    }
-    return {
-      ok: false,
-      problem: 'unreachable',
-      message: "We couldn't reach your Mac at that address.",
-      hint: 'Two usual causes: the address changed when BlueBubbles restarted (copy the current one), or the Mac is asleep. Check that BlueBubbles is open and shows a green/connected status.',
-    };
+    const d = diagnoseConnectionError(err, serverUrl);
+    return { ok: false, problem: d.problem, message: d.message, hint: d.hint };
   }
 }
 
@@ -326,12 +293,13 @@ export async function testConnection(
     revalidatePath('/settings/inboxes');
     return { ok: true, privateApi: Boolean(info.private_api) };
   } catch (err) {
+    const explained = describeConnectionError(err, conn.serverUrl);
     await db
       .update(channelConnections)
-      .set({ status: 'error', lastError: (err as Error).message })
+      .set({ status: 'error', lastError: explained })
       .where(eq(channelConnections.id, connectionId));
     revalidatePath('/settings/inboxes');
-    return { ok: false, error: (err as Error).message };
+    return { ok: false, error: explained };
   }
 }
 

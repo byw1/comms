@@ -3,6 +3,7 @@ import {
   type MaintenanceJob,
   COMMS_WEBHOOK_EVENTS,
   COMMS_WEBHOOK_VERSION,
+  describeConnectionError,
   enqueueMaintenance,
   loadConfig,
   publishEvent,
@@ -87,9 +88,17 @@ async function heartbeat(connectionId: string) {
       await enqueueMaintenance({ type: 'reregister', connectionId }).catch(() => {});
     }
   } catch (err) {
+    // Store the human explanation, not the raw "fetch failed" — this string
+    // is what the operator reads on the connection card and in the alert.
+    const conn = await db.query.channelConnections.findFirst({
+      where: eq(channelConnections.id, connectionId),
+      columns: { serverUrl: true },
+    });
+    const explained = describeConnectionError(err, conn?.serverUrl);
+
     await db
       .update(channelConnections)
-      .set({ status: 'error', lastError: (err as Error).message })
+      .set({ status: 'error', lastError: explained })
       .where(eq(channelConnections.id, connectionId));
     await publishEvent({ type: 'connection.status', connectionId, status: 'error' });
     log.warn({ connectionId, err: (err as Error).message }, 'heartbeat failed');
@@ -98,7 +107,7 @@ async function heartbeat(connectionId: string) {
       await notifyAdminsOfTransition(
         connectionId,
         prior.inboxId,
-        `bridge DOWN — messages are NOT being received (${(err as Error).message})`,
+        `bridge DOWN — messages are NOT being received. ${explained}`,
       ).catch(() => {});
     }
   }
