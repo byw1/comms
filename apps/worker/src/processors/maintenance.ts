@@ -10,7 +10,7 @@ import {
   publishEvent,
   logger,
 } from '@comms/core';
-import { syncContacts } from '../lib/contacts.js';
+import { repairBlankNames, syncContacts } from '../lib/contacts.js';
 import { getDb, eq, and, lte, inArray, isNotNull } from '@comms/db';
 import {
   channelConnections,
@@ -339,5 +339,7 @@ export async function processMaintenance(job: Job<MaintenanceJob>): Promise<void
       return followUps();
     case 'sla':
       return checkSlaBreaches();
+    case 'repairNames':
+      return repairBlankNames();
   }
 }

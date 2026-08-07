@@ -58,20 +58,27 @@ async function main() {
 
   log.info('Comms worker started');
 
-  // Periodic sweep: heartbeat each connection + unsnooze due conversations, and
-  // every 5th tick run a reconcile backfill to heal any messages missed while the
-  // webhook endpoint was down (BlueBubbles does not redeliver webhooks).
+  /**
+   * True at most once per `seconds`, across restarts and replicas.
+   *
+   * The obvious version — an in-memory tick counter with `tick % 60` — silently
+   * stops working the moment the worker restarts more often than the interval:
+   * the counter resets to zero and the hourly job simply never runs. Anchoring
+   * on a Redis key with a TTL means a deploy can't starve a slow job.
+   */
+  const due = async (key: string, seconds: number) => {
+    const set = await getRedis().set(`comms:due:${key}`, '1', 'EX', seconds, 'NX');
+    return set !== null;
+  };
+
+  // Periodic sweep: heartbeat each connection + unsnooze due conversations, plus
+  // a periodic reconcile backfill to heal any messages missed while the webhook
+  // endpoint was down (BlueBubbles does not redeliver webhooks).
   // A short Redis lock ensures only one replica sweeps each tick.
-  let tick = 0;
   const sweep = async () => {
     const redis = getRedis();
     const got = await redis.set('comms:sweep:lock', '1', 'PX', 55_000, 'NX');
     if (!got) return;
-    tick += 1;
-    // Webhooks are the primary path; this is only a safety net for events the
-    // Mac dropped while we were unreachable. Every 5 minutes was aggressive
-    // enough to saturate the bridge on its own.
-    const reconcile = tick % 30 === 0;
     try {
       await enqueueMaintenance({ type: 'unsnooze' });
       await enqueueMaintenance({ type: 'sla' });
@@ -80,9 +87,14 @@ async function main() {
         .from(channelConnections);
       for (const c of conns) {
         await enqueueMaintenance({ type: 'heartbeat', connectionId: c.id });
-        if (reconcile) await enqueueMaintenance({ type: 'backfill', connectionId: c.id });
+        // Webhooks are the primary path; this is only a safety net for events
+        // the Mac dropped while we were unreachable. Every 5 minutes was
+        // aggressive enough to saturate the bridge on its own.
+        if (await due(`backfill:${c.id}`, 30 * 60)) {
+          await enqueueMaintenance({ type: 'backfill', connectionId: c.id });
+        }
         // Address books change slowly — hourly is plenty.
-        if (tick % 60 === 0) {
+        if (await due(`contacts:${c.id}`, 60 * 60)) {
           await enqueueMaintenance({ type: 'contactSync', connectionId: c.id });
         }
       }
@@ -90,6 +102,14 @@ async function main() {
       log.warn({ err: (err as Error).message }, 'sweep failed');
     }
   };
+
+  // Blank names left by the old empty-string bug are repaired on boot rather
+  // than at the next contact sync — an hour of unlabelled rows is an hour too
+  // many, and the repair is three no-op UPDATEs once the data is clean.
+  await enqueueMaintenance({ type: 'repairNames' }).catch((err) =>
+    log.warn({ err: (err as Error).message }, 'could not enqueue name repair'),
+  );
+
   await sweep();
   const interval = setInterval(() => void sweep(), 60_000);
 

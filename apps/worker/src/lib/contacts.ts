@@ -55,6 +55,30 @@ function isPlaceholderName(name: string | null, addresses: string[]): boolean {
   return addresses.some((a) => a.toLowerCase() === n) || /^\+?[\d\s()\-.]+$/.test(n);
 }
 
+/**
+ * Reset rows written before the empty-string fallthrough was fixed.
+ *
+ * BlueBubbles sends '' for any chat the user never named, and the old `??`
+ * stored it verbatim — so the row renders unlabelled forever, because every
+ * fallback downstream only triggers on null. Nulling those out lets the
+ * naming helpers do their job.
+ *
+ * Idempotent and cheap (three indexed UPDATEs that match nothing once clean),
+ * so it runs at worker boot rather than waiting on the hourly contact sync.
+ */
+export async function repairBlankNames(): Promise<void> {
+  const db = getDb();
+  await db
+    .update(conversations)
+    .set({ title: null })
+    .where(and(eq(conversations.title, ''), eq(conversations.isGroup, false)));
+  await db
+    .update(conversations)
+    .set({ title: 'Group conversation' })
+    .where(and(eq(conversations.title, ''), eq(conversations.isGroup, true)));
+  await db.update(contacts).set({ displayName: null }).where(eq(contacts.displayName, ''));
+}
+
 export interface ContactSyncResult {
   fetched: number;
   /** Address-book entries that yielded at least one usable address. */
@@ -270,17 +294,7 @@ export async function syncContacts(connectionId: string): Promise<ContactSyncRes
     });
   }
 
-  // Repair rows written before the empty-string bug was fixed: a blank title
-  // or display name renders as an unlabelled row forever otherwise.
-  await db
-    .update(conversations)
-    .set({ title: null })
-    .where(and(eq(conversations.title, ''), eq(conversations.isGroup, false)));
-  await db
-    .update(conversations)
-    .set({ title: 'Group conversation' })
-    .where(and(eq(conversations.title, ''), eq(conversations.isGroup, true)));
-  await db.update(contacts).set({ displayName: null }).where(eq(contacts.displayName, ''));
+  await repairBlankNames();
 
   await db
     .update(channelConnections)

@@ -44,7 +44,9 @@ export type MaintenanceJob =
   /** Delete + re-create the webhook (after a URL change or event-list change). */
   | { type: 'reregister'; connectionId: string }
   /** Pull contacts (names + avatars) from the Mac's address book. */
-  | { type: 'contactSync'; connectionId: string };
+  | { type: 'contactSync'; connectionId: string }
+  /** Reset blank names written before the empty-string fallthrough was fixed. */
+  | { type: 'repairNames' };
 
 /**
  * Background AI work. `precompute` runs on every inbound message so the draft
