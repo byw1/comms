@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Inbox, Users, Settings, Hash, Search, Plus, Filter } from 'lucide-react';
+import { Inbox, Users, Settings, Hash, Search, Plus, Filter, Clock, Check } from 'lucide-react';
 import { Logo } from '@/components/brand';
 import { UserMenu } from '@/components/app/user-menu';
 import { NotificationsBell } from '@/components/app/notifications-bell';
@@ -97,7 +97,13 @@ export function Sidebar({
   views = [],
 }: {
   user: { name?: string | null; email?: string | null; image?: string | null };
-  counts: { open: number; mine: number; unassigned: number; closed: number };
+  counts: {
+    open: number;
+    mine: number;
+    unassigned: number;
+    snoozed: number;
+    closed: number;
+  };
   inboxes: { id: string; name: string; color: string; connected: boolean }[];
   views?: { id: string; name: string; href: string; count: number }[];
 }) {
@@ -106,10 +112,16 @@ export function Sidebar({
   const activeInbox = searchParams.get('inbox');
   const onInbox = pathname === '/inbox' || pathname.startsWith('/inbox/');
 
+  // Snoozed and Closed are folders, not filters: a conversation you snoozed is
+  // gone from the inbox until it wakes, and this is where it went. Their counts
+  // are deliberately not badged like unread work — they are archives, and a
+  // permanent "812" next to Closed is noise.
   const nav: NavItem[] = [
-    { href: '/inbox', label: 'All conversations', icon: Inbox, count: counts.open },
+    { href: '/inbox', label: 'Inbox', icon: Inbox, count: counts.open },
     { href: '/inbox?assignee=me', label: 'Assigned to me', icon: Users, count: counts.mine },
     { href: '/inbox?assignee=unassigned', label: 'Unassigned', icon: Hash, count: counts.unassigned },
+    { href: '/inbox?status=snoozed', label: 'Snoozed', icon: Clock, count: counts.snoozed },
+    { href: '/inbox?status=closed', label: 'Closed', icon: Check },
   ];
 
   return (
@@ -135,8 +147,13 @@ export function Sidebar({
         <SectionLabel>Conversations</SectionLabel>
         {nav.map((item) => {
           const isAll = item.href === '/inbox';
+          // Without the status check the Inbox row stayed lit while standing
+          // in Snoozed or Closed, so two rows looked selected at once.
           const active = isAll
-            ? onInbox && !activeInbox && !searchParams.get('assignee')
+            ? onInbox &&
+              !activeInbox &&
+              !searchParams.get('assignee') &&
+              !searchParams.get('status')
             : pathname === '/inbox' && searchParams.toString() === item.href.split('?')[1];
           return (
             <NavRow

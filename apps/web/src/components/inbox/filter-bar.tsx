@@ -24,8 +24,13 @@ import {
 import { AnimatePresence, motion } from '@/components/ui/motion';
 import { createSavedView } from '@/server/actions/views';
 import { cn } from '@/lib/utils';
+import { FOLDERS, folderLabel } from '@/lib/conversation-folder';
 
-const STATUSES = ['active', 'open', 'pending', 'snoozed', 'closed', 'all'] as const;
+/**
+ * `active` reads as "Inbox" because that is what it is — "Active" invited the
+ * assumption that snoozed threads were still in it.
+ */
+const STATUSES = FOLDERS.map((key) => ({ key, label: folderLabel(key) }));
 const PRIORITIES = ['urgent', 'high', 'normal', 'low'] as const;
 const SORTS = [
   { key: 'newest', label: 'Newest first' },
@@ -179,12 +184,11 @@ export function FilterBar({
           </DropdownMenuLabel>
           {STATUSES.map((s) => (
             <DropdownMenuItem
-              key={s}
-              onClick={() => setParam('status', s === 'active' ? null : s)}
-              className="capitalize"
+              key={s.key}
+              onClick={() => setParam('status', s.key === 'active' ? null : s.key)}
             >
-              <span className="flex-1">{s}</span>
-              {filters.status === s && <Check className="h-3.5 w-3.5" />}
+              <span className="flex-1">{s.label}</span>
+              {filters.status === s.key && <Check className="h-3.5 w-3.5" />}
             </DropdownMenuItem>
           ))}
 
@@ -288,7 +292,7 @@ export function FilterBar({
         {filters.status !== 'active' && (
           <FilterChip
             key="status"
-            label={filters.status}
+            label={STATUSES.find((s) => s.key === filters.status)?.label ?? filters.status}
             onClear={() => setParam('status', null)}
           />
         )}

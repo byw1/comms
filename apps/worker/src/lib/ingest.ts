@@ -299,7 +299,14 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
       ...(isInbound
         ? { unreadCount: (conversation.unreadCount ?? 0) + 1 }
         : {}),
-      ...(isInbound && conversation.status === 'closed' ? { status: 'open' as const } : {}),
+      // An inbound message pulls the thread back into the inbox from wherever
+      // it was filed. This matters most for SNOOZED: a snoozed conversation is
+      // genuinely hidden, so without this a reply would sit unseen until the
+      // wake time — which is exactly the message loss snoozing is supposed to
+      // prevent. Every mail client wakes a snoozed thread on reply.
+      ...(isInbound && (conversation.status === 'closed' || conversation.status === 'snoozed')
+        ? { status: 'open' as const, snoozedUntil: null }
+        : {}),
     })
     .where(eq(conversations.id, conversation.id));
 

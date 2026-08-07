@@ -17,6 +17,7 @@ import {
 import { updateConversation, setFollowUp } from '@/server/actions/inbox';
 import { PresenceBar } from '@/components/inbox/presence-bar';
 import { SNOOZE_PRESETS, FOLLOW_UP_PRESETS } from '@/lib/snooze';
+import { siblingConversationId } from '@/lib/inbox-nav';
 import { cn } from '@/lib/utils';
 
 /** Status is a dot + label rather than a filled chip — quieter in a header. */
@@ -54,16 +55,30 @@ export function ConversationHeader({
 
   function applyStatus(next: 'open' | 'closed') {
     const prev = status;
+    const goNext = next === 'closed' ? advanceTarget() : null;
     setStatus(next);
     start(async () => {
       const res = await updateConversation({ id: conversationId, status: next });
       if (!res.ok) {
         setStatus(prev);
         toast.error(res.error);
+      } else if (goNext !== null) {
+        router.push(goNext);
       } else {
         router.refresh();
       }
     });
+  }
+
+  /**
+   * Where to land once this conversation leaves the current folder. Read BEFORE
+   * the mutation, while the row is still in the list — afterwards there is no
+   * "next to" anything.
+   */
+  function advanceTarget() {
+    const next =
+      siblingConversationId(conversationId, 1) ?? siblingConversationId(conversationId, -1);
+    return next ? `/inbox/${next}` : '/inbox';
   }
 
   /**
@@ -81,6 +96,10 @@ export function ConversationHeader({
 
   function snooze(until: Date, label: string) {
     const prev = status;
+    // Snoozing takes the conversation out of the inbox, so staying on it would
+    // leave you looking at something that is no longer in the list you came
+    // from. Same move the `e` shortcut makes when closing.
+    const goNext = advanceTarget();
     setStatus('snoozed');
     setSnoozeOpen(false);
     start(async () => {
@@ -94,7 +113,7 @@ export function ConversationHeader({
         toast.error(res.error);
       } else {
         toast.success(`Snoozed until ${label.toLowerCase()}`);
-        router.refresh();
+        router.push(goNext);
       }
     });
   }

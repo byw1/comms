@@ -14,6 +14,7 @@ import { bulkUpdateConversations } from '@/server/actions/inbox';
 import { FilterBar } from '@/components/inbox/filter-bar';
 import { setVisibleConversationIds } from '@/lib/inbox-nav';
 import { conversationName, nameForInitials } from '@/lib/naming';
+import { matchesFolder } from '@/lib/conversation-folder';
 import { cn, initials } from '@/lib/utils';
 import { listTime, relativeTime } from '@/lib/format';
 import type { ConversationListItem } from '@/server/queries';
@@ -95,9 +96,9 @@ export function ConversationListPane({
       if (assignee === 'unassigned' && c.assigneeId) return false;
       if (assignee && assignee !== 'me' && assignee !== 'unassigned' && c.assigneeId !== assignee)
         return false;
-      if (statusFilter === 'active' && c.status === 'closed') return false;
-      else if (statusFilter !== 'active' && statusFilter !== 'all' && c.status !== statusFilter)
-        return false;
+      // Shared with the server filter so the list and the sidebar counts can
+      // never disagree about what is in the inbox.
+      if (!matchesFolder(c.status, statusFilter)) return false;
       if (priorityFilter.length && !priorityFilter.includes(c.priority)) return false;
       if (slaFilter && !c.slaBreachedAt) return false;
       if (unreadFilter && c.unreadCount === 0) return false;
@@ -118,7 +119,14 @@ export function ConversationListPane({
 
     const time = (c: (typeof rows)[number]) =>
       new Date(c.lastMessageAt ?? c.createdAt).getTime();
-    if (sort === 'oldest') rows.sort((a, b) => time(a) - time(b));
+    // In the snoozed folder the question is "what comes back next", so wake
+    // order beats recency — same as every mail client's snoozed list.
+    if (statusFilter === 'snoozed') {
+      rows.sort(
+        (a, b) =>
+          new Date(a.snoozedUntil ?? 0).getTime() - new Date(b.snoozedUntil ?? 0).getTime(),
+      );
+    } else if (sort === 'oldest') rows.sort((a, b) => time(a) - time(b));
     else if (sort === 'priority')
       rows.sort(
         (a, b) =>
@@ -162,8 +170,9 @@ export function ConversationListPane({
   }, [filtered]);
 
   const tabs = [
-    { label: 'Active', href: '/inbox', key: 'active' },
+    { label: 'Inbox', href: '/inbox', key: 'active' },
     { label: 'Mine', href: '/inbox?assignee=me', key: 'mine' },
+    { label: 'Snoozed', href: '/inbox?status=snoozed', key: 'snoozed' },
     { label: 'Closed', href: '/inbox?status=closed', key: 'closed' },
   ];
 
@@ -211,6 +220,7 @@ export function ConversationListPane({
             const isActive =
               (t.key === 'active' && !assignee && statusFilter === 'active') ||
               (t.key === 'mine' && assignee === 'me') ||
+              (t.key === 'snoozed' && statusFilter === 'snoozed') ||
               (t.key === 'closed' && statusFilter === 'closed');
             return (
               <Link
@@ -295,11 +305,26 @@ export function ConversationListPane({
               <InboxIcon className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm font-medium">{query ? 'No matches' : 'Nothing here yet'}</p>
+              {/* An empty Snoozed folder means something different from an
+                  empty inbox, and saying "new conversations appear here" would
+                  be a lie in both Snoozed and Closed. */}
+              <p className="text-sm font-medium">
+                {query
+                  ? 'No matches'
+                  : statusFilter === 'snoozed'
+                    ? 'Nothing snoozed'
+                    : statusFilter === 'closed'
+                      ? 'Nothing closed yet'
+                      : 'Nothing here yet'}
+              </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {query
                   ? 'Try a different search term.'
-                  : 'New conversations will appear here automatically.'}
+                  : statusFilter === 'snoozed'
+                    ? 'Snoozed conversations wait here and return to your inbox at the time you picked.'
+                    : statusFilter === 'closed'
+                      ? 'Conversations you close land here. They reopen automatically if someone writes back.'
+                      : 'New conversations will appear here automatically.'}
               </p>
             </div>
           </div>
@@ -419,10 +444,20 @@ export function ConversationListPane({
                             due {relativeTime(c.nextResponseDueAt)}
                           </Badge>
                         ) : null}
-                        {c.status !== 'open' && c.status !== 'closed' && (
-                          <Badge variant="outline" size="sm" className="capitalize">
-                            {c.status}
+                        {/* In the snoozed folder the useful fact is when it
+                            comes back, not that it is snoozed — you can see
+                            that from the folder you are standing in. */}
+                        {c.status === 'snoozed' && c.snoozedUntil ? (
+                          <Badge variant="outline" size="sm">
+                            wakes {relativeTime(c.snoozedUntil)}
                           </Badge>
+                        ) : (
+                          c.status !== 'open' &&
+                          c.status !== 'closed' && (
+                            <Badge variant="outline" size="sm" className="capitalize">
+                              {c.status}
+                            </Badge>
+                          )
                         )}
                         {showChannels && c.inbox && (
                           <span

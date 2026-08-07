@@ -13,9 +13,17 @@ import {
   savedViews,
 } from '@comms/db';
 import { db } from '@/server/db';
+import { INBOX_STATUSES } from '@/lib/conversation-folder';
 
 export type ConversationFilter = {
-  /** 'active' means everything except closed — the default working set. */
+  /**
+   * 'active' is the inbox: open and pending only.
+   *
+   * Snoozed and closed conversations are deliberately NOT in it. Snoozing
+   * something that stays in the list is just a label — the whole point is that
+   * it leaves and comes back, the way it does in every mail client. Each has
+   * its own view instead.
+   */
   status?: 'open' | 'pending' | 'snoozed' | 'closed' | 'active' | 'all';
   assignee?: 'me' | 'unassigned' | string;
   inboxId?: string;
@@ -33,7 +41,7 @@ function buildConversationWhere(filter: ConversationFilter) {
   const where = [];
 
   if (filter.status === 'active') {
-    where.push(sql`${conversations.status} != 'closed'`);
+    where.push(inArray(conversations.status, INBOX_STATUSES));
   } else if (filter.status && filter.status !== 'all') {
     where.push(eq(conversations.status, filter.status));
   }
@@ -76,7 +84,11 @@ function buildConversationWhere(filter: ConversationFilter) {
   return where;
 }
 
-function orderFor(sort: ConversationFilter['sort']) {
+function orderFor(sort: ConversationFilter['sort'], status?: ConversationFilter['status']) {
+  // The question you have in the snoozed view is "what comes back next", not
+  // "what was said most recently".
+  if (status === 'snoozed') return [asc(conversations.snoozedUntil), desc(conversations.lastMessageAt)];
+
   if (sort === 'oldest') {
     return [asc(conversations.lastMessageAt), asc(conversations.createdAt)];
   }
@@ -95,7 +107,7 @@ export async function listConversations(filter: ConversationFilter = {}) {
 
   return db.query.conversations.findMany({
     where: where.length ? and(...where) : undefined,
-    orderBy: orderFor(filter.sort),
+    orderBy: orderFor(filter.sort, filter.status),
     limit: 100,
     with: {
       // Identities come along so an unnamed thread can show the phone number
@@ -198,9 +210,12 @@ export async function listAutomationRules() {
 export async function inboxCounts(currentUserId: string) {
   const [row] = await db
     .select({
-      open: sql<number>`count(*) filter (where ${conversations.status} = 'open')`,
-      mine: sql<number>`count(*) filter (where ${conversations.assigneeId} = ${currentUserId} and ${conversations.status} != 'closed')`,
-      unassigned: sql<number>`count(*) filter (where ${conversations.assigneeId} is null and ${conversations.status} != 'closed')`,
+      // Every count uses the same definition of "in the inbox" as the list,
+      // or a badge promises work that isn't there when you click it.
+      open: sql<number>`count(*) filter (where ${conversations.status} in ('open','pending'))`,
+      mine: sql<number>`count(*) filter (where ${conversations.assigneeId} = ${currentUserId} and ${conversations.status} in ('open','pending'))`,
+      unassigned: sql<number>`count(*) filter (where ${conversations.assigneeId} is null and ${conversations.status} in ('open','pending'))`,
+      snoozed: sql<number>`count(*) filter (where ${conversations.status} = 'snoozed')`,
       closed: sql<number>`count(*) filter (where ${conversations.status} = 'closed')`,
     })
     .from(conversations);
@@ -208,6 +223,7 @@ export async function inboxCounts(currentUserId: string) {
     open: Number(row?.open ?? 0),
     mine: Number(row?.mine ?? 0),
     unassigned: Number(row?.unassigned ?? 0),
+    snoozed: Number(row?.snoozed ?? 0),
     closed: Number(row?.closed ?? 0),
   };
 }
