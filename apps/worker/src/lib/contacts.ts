@@ -68,15 +68,32 @@ function isPlaceholderName(name: string | null, addresses: string[]): boolean {
  */
 export async function repairBlankNames(): Promise<void> {
   const db = getDb();
-  await db
+  const direct = await db
     .update(conversations)
     .set({ title: null })
-    .where(and(eq(conversations.title, ''), eq(conversations.isGroup, false)));
-  await db
+    .where(and(eq(conversations.title, ''), eq(conversations.isGroup, false)))
+    .returning({ id: conversations.id });
+  const groups = await db
     .update(conversations)
     .set({ title: 'Group conversation' })
-    .where(and(eq(conversations.title, ''), eq(conversations.isGroup, true)));
-  await db.update(contacts).set({ displayName: null }).where(eq(contacts.displayName, ''));
+    .where(and(eq(conversations.title, ''), eq(conversations.isGroup, true)))
+    .returning({ id: conversations.id });
+  const named = await db
+    .update(contacts)
+    .set({ displayName: null })
+    .where(eq(contacts.displayName, ''))
+    .returning({ id: contacts.id });
+
+  const total = direct.length + groups.length + named.length;
+  // Silence is what made the original bug hard to see; say so either way.
+  if (total > 0) {
+    log.info(
+      { conversations: direct.length, groups: groups.length, contacts: named.length },
+      'repaired blank names',
+    );
+  } else {
+    log.debug('no blank names to repair');
+  }
 }
 
 export interface ContactSyncResult {
