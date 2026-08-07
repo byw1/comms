@@ -56,11 +56,14 @@ export function ChannelHealthBanner({ initial }: { initial: UnhealthyConnection[
               — new messages are not being received
               {list[0]!.reason === 'stale' && ' (no heartbeat — is the worker or Mac asleep?)'}
             </span>
+            <span className="hidden shrink-0 text-[11.5px] opacity-80 sm:inline">
+              Replies you send are held and delivered when it&apos;s back.
+            </span>
             <Link
               href="/settings/inboxes"
               className="flex shrink-0 items-center gap-1 rounded-md bg-destructive px-2 py-1 text-[11.5px] font-medium text-destructive-foreground transition-transform hover:opacity-90 active:scale-95"
             >
-              Fix connection
+              Update address
               <ArrowRight className="h-3 w-3" />
             </Link>
           </div>

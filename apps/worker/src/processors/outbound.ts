@@ -6,6 +6,8 @@ import {
   publishEvent,
   awaitSendSlot,
   takeSendQuota,
+  diagnoseConnectionError,
+  type ConnectionProblem,
   loadConfig,
   logger,
 } from '@comms/core';
@@ -15,6 +17,35 @@ import { loadConnection } from '../lib/connection.js';
 import { withChatLock } from '../lib/lock.js';
 
 const log = logger.child({ module: 'outbound' });
+
+/**
+ * Failures that mean "the Mac isn't reachable right now" rather than "this
+ * message can't be sent". A laptop that sleeps or hops wifi produces these
+ * constantly, and the reply must survive until it wakes up.
+ */
+const TRANSIENT_PROBLEMS = new Set<ConnectionProblem>([
+  'unreachable',
+  'timeout',
+  'dns',
+  'refused',
+  'server-error',
+  'tls',
+]);
+
+/** How long to keep trying before admitting defeat. */
+const MAX_RETRY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Back off as the outage lengthens: responsive to a brief blip, gentle on a
+ * Mac that's been shut for the night. Derived from elapsed time rather than an
+ * attempt counter, because parking a job doesn't increment BullMQ's.
+ */
+function retryDelayFor(elapsedMs: number): number {
+  if (elapsedMs < 5 * 60_000) return 30_000;
+  if (elapsedMs < 30 * 60_000) return 2 * 60_000;
+  if (elapsedMs < 2 * 60 * 60_000) return 5 * 60_000;
+  return 15 * 60_000;
+}
 
 export async function processOutbound(job: Job<OutboundJob>, token?: string): Promise<void> {
   const { messageId, connectionId } = job.data;
@@ -139,7 +170,36 @@ export async function processOutbound(job: Job<OutboundJob>, token?: string): Pr
         messageId: msg.id,
       });
     } catch (err) {
-      const message = (err as Error).message;
+      const diagnosis = diagnoseConnectionError(err, connection.serverUrl);
+      const transient = TRANSIENT_PROBLEMS.has(diagnosis.problem);
+      const elapsed = Date.now() - (job.timestamp ?? Date.now());
+
+      // A laptop running BlueBubbles sleeps, changes wifi, and rotates its
+      // tunnel URL. Those are temporary conditions, not send failures — the
+      // message must survive them. Park it and keep trying rather than
+      // burning five retries in the first minute and giving up.
+      if (transient && elapsed < MAX_RETRY_WINDOW_MS) {
+        await db
+          .update(messages)
+          .set({ status: 'queued', error: `Waiting to send — ${diagnosis.message}` })
+          .where(eq(messages.id, msg.id));
+        await publishEvent({
+          type: 'message.updated',
+          conversationId: conv.id,
+          inboxId: connection.inboxId,
+          messageId: msg.id,
+        });
+        log.warn(
+          { messageId: msg.id, problem: diagnosis.problem, elapsedMs: elapsed },
+          'bridge unreachable; parking outbound message for retry',
+        );
+        await job.moveToDelayed(Date.now() + retryDelayFor(elapsed), token);
+        throw new DelayedError();
+      }
+
+      const message = transient
+        ? `Gave up after ${Math.round(MAX_RETRY_WINDOW_MS / 3_600_000)}h. ${diagnosis.message} ${diagnosis.hint}`
+        : `${diagnosis.message} ${diagnosis.hint}`;
       await db
         .update(messages)
         .set({ status: 'failed', error: message })
@@ -150,8 +210,8 @@ export async function processOutbound(job: Job<OutboundJob>, token?: string): Pr
         inboxId: connection.inboxId,
         messageId: msg.id,
       });
-      log.error({ messageId: msg.id, err: message }, 'outbound send failed');
-      throw err; // let BullMQ retry with backoff
+      log.error({ messageId: msg.id, err: (err as Error).message }, 'outbound send failed');
+      throw err; // let BullMQ record the failure
     }
   });
 }

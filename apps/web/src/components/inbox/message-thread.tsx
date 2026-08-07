@@ -1,7 +1,17 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Check, CheckCheck, Clock, Loader2, AlertCircle, Paperclip, Lock, Mic } from 'lucide-react';
+import {
+  Check,
+  CheckCheck,
+  Clock,
+  Loader2,
+  AlertCircle,
+  Paperclip,
+  Lock,
+  Mic,
+  CloudOff,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { clockTime, dayLabel } from '@/lib/format';
 import { markRead } from '@/server/actions/inbox';
@@ -28,6 +38,8 @@ export type ThreadMessage = {
   direction: 'inbound' | 'outbound';
   isPrivateNote: boolean;
   status: string;
+  /** Set while a send is parked waiting for an unreachable Mac. */
+  error?: string | null;
   authorName: string | null;
   reactionType: string | null;
   createdAt: Date | string;
@@ -50,7 +62,16 @@ function StatusTick({ message }: { message: ThreadMessage }) {
   if (message.isPrivateNote) return null;
   switch (message.status) {
     case 'queued':
-      return <Clock className="h-3 w-3" />;
+      // A queued message carrying an error is parked waiting for the Mac —
+      // say so, rather than letting it look like it's about to go out.
+      return message.error ? (
+        <span className="flex items-center gap-1 text-warning" title={message.error}>
+          <CloudOff className="h-3 w-3" />
+          waiting
+        </span>
+      ) : (
+        <Clock className="h-3 w-3" />
+      );
     case 'sending':
       return <Loader2 className="h-3 w-3 animate-spin" />;
     case 'failed':

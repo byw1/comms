@@ -73,6 +73,7 @@ export default async function ConversationPage({
             direction: m.direction,
             isPrivateNote: m.isPrivateNote,
             status: m.status,
+            error: m.error,
             authorName: m.authorUser?.name ?? null,
             reactionType: m.reactionType,
             createdAt: m.createdAt,

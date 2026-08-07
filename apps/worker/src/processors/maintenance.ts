@@ -5,6 +5,7 @@ import {
   COMMS_WEBHOOK_VERSION,
   describeConnectionError,
   enqueueMaintenance,
+  outboundQueue,
   loadConfig,
   publishEvent,
   logger,
@@ -75,10 +76,15 @@ async function heartbeat(connectionId: string) {
     await publishEvent({ type: 'connection.status', connectionId, status: 'connected' });
 
     if (prior && prior.status !== 'connected' && prior.status !== 'pending') {
+      // Anything parked while the Mac was unreachable should go out NOW, not
+      // after the rest of its backoff — the laptop is awake again.
+      const flushed = await flushParkedSends(connectionId);
       await notifyAdminsOfTransition(
         connectionId,
         prior.inboxId,
-        'bridge recovered — messages are flowing again',
+        flushed > 0
+          ? `bridge recovered — sending ${flushed} queued message${flushed === 1 ? '' : 's'}`
+          : 'bridge recovered — messages are flowing again',
       ).catch(() => {});
     }
 
@@ -248,6 +254,28 @@ async function reregisterWebhook(connectionId: string) {
     })
     .where(eq(channelConnections.id, connectionId));
   log.info({ connectionId, version: COMMS_WEBHOOK_VERSION }, 'webhook re-registered');
+}
+
+/**
+ * Promote every delayed outbound job for this connection so parked replies go
+ * out the moment the bridge is back, rather than sitting out a 15-minute
+ * backoff that was sized for an outage that just ended.
+ */
+async function flushParkedSends(connectionId: string): Promise<number> {
+  try {
+    const delayed = await outboundQueue().getDelayed(0, 500);
+    let promoted = 0;
+    for (const job of delayed) {
+      if (job.data?.connectionId !== connectionId) continue;
+      await job.promote().catch(() => {});
+      promoted += 1;
+    }
+    if (promoted > 0) log.info({ connectionId, promoted }, 'flushed parked outbound sends');
+    return promoted;
+  } catch (err) {
+    log.warn({ err: (err as Error).message }, 'could not flush parked sends');
+    return 0;
+  }
 }
 
 async function contactSync(connectionId: string) {
