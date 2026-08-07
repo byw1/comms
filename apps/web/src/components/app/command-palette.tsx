@@ -18,9 +18,12 @@ type Item = {
 
 export function CommandPalette({
   tags = [],
+  isAdmin = false,
 }: {
   /** Used to resolve `tag:name` operators to ids. */
   tags?: { id: string; name: string }[];
+  /** Agents never see workspace-level destinations they cannot open. */
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const tagNameToId = useMemo(
@@ -93,15 +96,19 @@ export function CommandPalette({
         action: () => nav('/inbox?assignee=unassigned'),
       },
       { id: 'settings', label: 'Settings', icon: Settings, action: () => nav('/settings') },
-      {
-        id: 'automations',
-        label: 'Automations',
-        icon: Zap,
-        action: () => nav('/settings/automations'),
-      },
+      ...(isAdmin
+        ? [
+            {
+              id: 'automations',
+              label: 'Automations',
+              icon: Zap,
+              action: () => nav('/settings/automations'),
+            },
+          ]
+        : []),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [isAdmin],
   );
 
   const q = parsed.text.trim().toLowerCase();

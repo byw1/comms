@@ -1,54 +1,10 @@
-import { getOrgSettings, getSetting } from '@/server/settings';
-import { getCurrentUser } from '@/lib/session';
-import { GeneralForm } from '@/components/settings/general-form';
-import { SlaForm } from '@/components/settings/sla-form';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { redirect } from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
-
-export default async function GeneralSettingsPage() {
-  const org = await getOrgSettings();
-  const user = await getCurrentUser();
-  const sla =
-    (await getSetting<{ firstResponseMinutes?: number; nextResponseMinutes?: number }>('sla')) ?? {};
-
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Workspace</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <GeneralForm orgName={org.orgName ?? 'Comms'} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Service-level targets (SLA)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <SlaForm sla={sla} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Your account</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1 text-sm">
-          <p>
-            <span className="text-muted-foreground">Name:</span> {user?.name ?? '—'}
-          </p>
-          <p>
-            <span className="text-muted-foreground">Email:</span> {user?.email}
-          </p>
-          <p>
-            <span className="text-muted-foreground">Role:</span>{' '}
-            <span className="capitalize">{user?.role}</span>
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
+/**
+ * `/settings` is the link everyone has in the sidebar and the command palette,
+ * and most people who follow it are going to their own account — workspace
+ * settings live one tab over, and agents cannot see them at all.
+ */
+export default function SettingsIndexPage() {
+  redirect('/settings/profile');
 }

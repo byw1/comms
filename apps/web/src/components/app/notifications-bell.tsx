@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bell } from 'lucide-react';
 import {
@@ -19,6 +19,7 @@ import {
   type NotificationItem,
 } from '@/server/actions/notifications';
 import { relativeTime } from '@/lib/format';
+import { playNotificationTone } from '@/lib/notification-sound';
 import { cn } from '@/lib/utils';
 
 export function NotificationsBell() {
@@ -26,12 +27,14 @@ export function NotificationsBell() {
   const router = useRouter();
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unread, setUnread] = useState(0);
+  const soundEnabled = useRef(false);
   const [, start] = useTransition();
 
   const load = useCallback(async () => {
     const res = await listNotifications();
     setItems(res.items);
     setUnread(res.unread);
+    soundEnabled.current = res.soundEnabled;
   }, []);
 
   useEffect(() => {
@@ -39,7 +42,11 @@ export function NotificationsBell() {
   }, [load]);
 
   useRealtime((e) => {
-    if (e.type === 'notification' && me && e.userId === me.id) void load();
+    if (e.type === 'notification' && me && e.userId === me.id) {
+      // Chime on arrival, not on the initial load — this only fires live.
+      if (soundEnabled.current) playNotificationTone();
+      void load();
+    }
   });
 
   function open(item: NotificationItem) {

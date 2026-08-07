@@ -10,6 +10,7 @@ import {
   notifications,
   inboxes,
   contacts,
+  resolvePreferences,
 } from '@comms/db';
 import {
   newTempGuid,
@@ -41,11 +42,13 @@ async function notifyMentions(
 
   const all = await db.query.users.findMany({
     where: eq(users.status, 'active'),
-    columns: { id: true, name: true, email: true },
+    columns: { id: true, name: true, email: true, preferences: true },
   });
   const matched = new Set<string>();
   for (const u of all) {
     if (u.id === authorUserId) continue;
+    // Respect the recipient's own notification settings.
+    if (!resolvePreferences(u.preferences).notifyMentions) continue;
     const nameKey = (u.name ?? '').toLowerCase().replace(/\s+/g, '');
     const emailLocal = u.email.split('@')[0]!.toLowerCase();
     if (tokens.some((t) => t === nameKey || t === emailLocal || t === u.email.toLowerCase())) {

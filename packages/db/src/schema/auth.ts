@@ -1,13 +1,31 @@
-import {
-  pgTable,
-  text,
-  timestamp,
-  primaryKey,
-  integer,
-  boolean,
-} from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, primaryKey, integer, boolean, jsonb } from 'drizzle-orm/pg-core';
 import { genId, timestamps } from './_helpers.js';
 import { userRole, userStatus } from './enums.js';
+
+/**
+ * Per-user settings, owned by the user rather than by an admin. Everything is
+ * optional so an unset key can fall back to the product default — see
+ * `notificationDefaults` for what those are.
+ */
+export interface UserPreferences {
+  /** In-app notification when a teammate @mentions you in an internal note. */
+  notifyMentions?: boolean;
+  /** Play a short tone when a new notification lands while the app is open. */
+  notificationSound?: boolean;
+}
+
+/** Defaults applied when a user has never touched their notification settings. */
+export const notificationDefaults = {
+  notifyMentions: true,
+  notificationSound: false,
+} satisfies Required<UserPreferences>;
+
+/** Read a user's preferences with the defaults filled in for anything unset. */
+export function resolvePreferences(
+  preferences: UserPreferences | null | undefined,
+): Required<UserPreferences> {
+  return { ...notificationDefaults, ...(preferences ?? {}) };
+}
 
 /**
  * Users table. Compatible with the Auth.js Drizzle adapter (id/name/email/
@@ -23,6 +41,7 @@ export const users = pgTable('users', {
   hashedPassword: text('hashed_password'),
   role: userRole('role').notNull().default('agent'),
   status: userStatus('status').notNull().default('active'),
+  preferences: jsonb('preferences').$type<UserPreferences>().notNull().default({}),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
   ...timestamps,
 });

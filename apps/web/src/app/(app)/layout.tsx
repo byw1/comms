@@ -1,4 +1,4 @@
-import { requireUser } from '@/lib/session';
+import { isAdminRole, requireDbUser } from '@/lib/session';
 import {
   inboxCounts,
   listInboxes,
@@ -16,7 +16,9 @@ import { MobileTopBar, SidebarShell } from '@/components/app/mobile-shell';
 export const dynamic = 'force-dynamic';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = await requireUser();
+  // Read the row rather than the JWT: the token snapshots name/image/role at
+  // sign-in, so a profile edit would otherwise not show up until the next login.
+  const user = await requireDbUser();
   const [counts, inboxRows, unhealthy, viewRows, tagRows] = await Promise.all([
     inboxCounts(user.id),
     listInboxes(),
@@ -72,7 +74,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
         </div>
       </div>
-      <CommandPalette tags={tagRows.map((t) => ({ id: t.id, name: t.name }))} />
+      <CommandPalette
+        tags={tagRows.map((t) => ({ id: t.id, name: t.name }))}
+        isAdmin={isAdminRole(user.role)}
+      />
       <NewConversation />
     </RealtimeProvider>
   );

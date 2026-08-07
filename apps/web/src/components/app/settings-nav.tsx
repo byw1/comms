@@ -4,8 +4,15 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
-const ITEMS = [
-  { href: '/settings', label: 'General' },
+/** Yours: anyone signed in can change these, whatever their role. */
+const PERSONAL = [
+  { href: '/settings/profile', label: 'Profile' },
+  { href: '/settings/preferences', label: 'Preferences' },
+];
+
+/** The workspace's: owner/admin only, and hidden entirely from agents. */
+const ADMIN = [
+  { href: '/settings/workspace', label: 'Workspace' },
   { href: '/settings/inboxes', label: 'Inboxes & Channels' },
   { href: '/settings/team', label: 'Team' },
   { href: '/settings/tags', label: 'Tags' },
@@ -13,27 +20,45 @@ const ITEMS = [
   { href: '/settings/automations', label: 'Automations' },
 ];
 
-export function SettingsNav() {
+function Tab({ href, label, active }: { href: string; label: string; active: boolean }) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors',
+        active
+          ? 'border-foreground font-medium text-foreground'
+          : 'border-transparent text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {label}
+    </Link>
+  );
+}
+
+export function SettingsNav({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
+  // Sub-pages (e.g. /settings/inboxes/setup) keep their parent tab lit.
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+
   return (
     <nav className="flex gap-1 overflow-x-auto border-b [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {ITEMS.map((item) => {
-        const active = pathname === item.href;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              'whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors',
-              active
-                ? 'border-foreground font-medium text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {item.label}
-          </Link>
-        );
-      })}
+      {PERSONAL.map((item) => (
+        <Tab key={item.href} {...item} active={isActive(item.href)} />
+      ))}
+
+      {isAdmin && (
+        <>
+          <span aria-hidden className="mx-2 my-2 w-px shrink-0 bg-border" />
+          <span className="flex shrink-0 items-center pr-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Admin
+          </span>
+          {ADMIN.map((item) => (
+            <Tab key={item.href} {...item} active={isActive(item.href)} />
+          ))}
+        </>
+      )}
     </nav>
   );
 }

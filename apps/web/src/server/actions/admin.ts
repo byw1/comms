@@ -94,7 +94,7 @@ export async function updateOrgName(orgName: string): Promise<ActionResult> {
   await requireAdmin();
   const current = await getOrgSettings();
   await setSetting('org', { ...current, orgName: orgName.trim() || 'Comms' });
-  revalidatePath('/settings');
+  revalidatePath('/settings/workspace');
   return { ok: true };
 }
 
@@ -111,6 +111,6 @@ export async function updateSlaSettings(input: {
       ? input.nextResponseMinutes
       : undefined,
   });
-  revalidatePath('/settings');
+  revalidatePath('/settings/workspace');
   return { ok: true };
 }

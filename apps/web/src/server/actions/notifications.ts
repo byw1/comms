@@ -1,7 +1,7 @@
 'use server';
 
-import { and, desc, eq, isNull } from '@comms/db';
-import { notifications } from '@comms/db';
+import { and, desc, eq, isNull, resolvePreferences } from '@comms/db';
+import { notifications, users } from '@comms/db';
 import { db } from '@/server/db';
 import { requireUser } from '@/lib/session';
 
@@ -13,13 +13,21 @@ export interface NotificationItem {
   createdAt: Date;
 }
 
-export async function listNotifications(): Promise<{ items: NotificationItem[]; unread: number }> {
+export async function listNotifications(): Promise<{
+  items: NotificationItem[];
+  unread: number;
+  /** Whether the bell should chime — the caller already polls this on every event. */
+  soundEnabled: boolean;
+}> {
   const user = await requireUser();
-  const rows = await db.query.notifications.findMany({
-    where: eq(notifications.userId, user.id),
-    orderBy: [desc(notifications.createdAt)],
-    limit: 30,
-  });
+  const [rows, me] = await Promise.all([
+    db.query.notifications.findMany({
+      where: eq(notifications.userId, user.id),
+      orderBy: [desc(notifications.createdAt)],
+      limit: 30,
+    }),
+    db.query.users.findFirst({ where: eq(users.id, user.id), columns: { preferences: true } }),
+  ]);
   return {
     items: rows.map((r) => ({
       id: r.id,
@@ -29,6 +37,7 @@ export async function listNotifications(): Promise<{ items: NotificationItem[]; 
       createdAt: r.createdAt,
     })),
     unread: rows.filter((r) => !r.readAt).length,
+    soundEnabled: resolvePreferences(me?.preferences).notificationSound,
   };
 }
 
