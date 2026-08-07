@@ -244,7 +244,9 @@ export function MessageThread({
             <div key={m.id}>
               {dayDivider}
               <TimelineNote>
-                {m.authorName ?? (m.direction === 'inbound' ? 'Contact' : 'You')}{' '}
+                {/* `||`, not `??` — an unnamed handle arrives as '' and would
+                    render this line starting with a space. */}
+                {m.authorName || (m.direction === 'inbound' ? 'Contact' : 'You')}{' '}
                 {removed ? 'removed a' : 'reacted'} {REACTION_EMOJI[base] ?? '👍'}
               </TimelineNote>
             </div>

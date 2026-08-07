@@ -16,6 +16,7 @@ import {
 } from '@comms/core';
 import { db } from '@/server/db';
 import { requireUser } from '@/lib/session';
+import { formatAddress } from '@/lib/naming';
 import { getConnectionForInbox } from '@/server/queries';
 
 const log = logger.child({ action: 'new-conversation' });
@@ -73,10 +74,14 @@ export async function searchRecipients(term: string): Promise<RecipientSuggestio
       columns: { id: true },
     });
 
+    const address = r.rawValue || r.address;
     suggestions.push({
       contactId: r.contactId,
-      name: r.name ?? r.rawValue ?? r.address,
-      address: r.rawValue ?? r.address,
+      // `||` so an unnamed contact falls through to its number rather than
+      // showing a blank row, and the number is formatted the way the inbox
+      // formats it.
+      name: r.name || formatAddress(address) || address,
+      address,
       hasConversation: Boolean(existing),
       conversationId: existing?.id ?? null,
     });
