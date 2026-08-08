@@ -62,6 +62,11 @@ const READ_NO_REPLY = sql<boolean>`exists (
   where m.conversation_id = ${conversations.id}
     and m.direction = 'outbound'
     and m.is_private_note = false
+    -- System events ("Assigned to X", "Follow-up reminder") are stored as
+    -- outbound with status 'sent', and the chat-read-status webhook marks
+    -- every such row read in bulk. Without this they would trip the filter on
+    -- conversations nobody actually wrote to.
+    and m.author_type <> 'system'
     and m.read_at is not null
     and not exists (
       select 1 from ${messages} m2

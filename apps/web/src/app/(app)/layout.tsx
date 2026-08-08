@@ -10,6 +10,7 @@ import { Sidebar } from '@/components/app/sidebar';
 import { RealtimeProvider } from '@/components/app/realtime-provider';
 import { ChannelHealthBanner } from '@/components/app/channel-health-banner';
 import { CommandPalette } from '@/components/app/command-palette';
+import { pendingCount } from '@/server/actions/scheduled';
 import { KeymapProvider } from '@/components/app/keymap-provider';
 import { KeyboardShortcuts } from '@/components/app/keyboard-shortcuts';
 import { NewConversation } from '@/components/inbox/new-conversation';
@@ -22,12 +23,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Read the row rather than the JWT: the token snapshots name/image/role at
   // sign-in, so a profile edit would otherwise not show up until the next login.
   const user = await requireDbUser();
-  const [counts, inboxRows, unhealthy, viewRows, tagRows] = await Promise.all([
+  const [counts, inboxRows, unhealthy, viewRows, tagRows, pending] = await Promise.all([
     inboxCounts(user.id),
     listInboxes(),
     listUnhealthyConnections(),
     listSavedViews(user.id),
     listTags(),
+    pendingCount(),
   ]);
 
   /** Turn a saved view's stored filters back into an inbox URL. */
@@ -65,7 +67,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <SidebarShell>
             <Sidebar
               user={{ name: user.name, email: user.email, image: user.image }}
-              counts={counts}
+              counts={{ ...counts, pending }}
               inboxes={inboxList}
               views={viewRows.map((v) => ({
                 id: v.id,

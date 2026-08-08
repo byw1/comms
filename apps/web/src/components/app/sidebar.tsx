@@ -13,6 +13,7 @@ import {
   Clock,
   Check,
   Pencil,
+  CalendarClock,
 } from 'lucide-react';
 import { Logo } from '@/components/brand';
 import { UserMenu } from '@/components/app/user-menu';
@@ -115,6 +116,7 @@ export function Sidebar({
     snoozed: number;
     closed: number;
     drafts: number;
+    pending: number;
   };
   inboxes: { id: string; name: string; color: string; connected: boolean }[];
   views?: { id: string; name: string; href: string; count: number }[];
@@ -139,6 +141,9 @@ export function Sidebar({
       : []),
     { href: '/inbox?status=snoozed', label: 'Snoozed', icon: Clock, count: counts.snoozed },
     { href: '/inbox?status=closed', label: 'Closed', icon: Check },
+    // Not a folder of conversations, but it belongs beside them: it answers
+    // "what happens next" and nothing else in the app does.
+    { href: '/scheduled', label: 'Scheduled', icon: CalendarClock, count: counts.pending },
   ];
 
   return (
@@ -166,7 +171,9 @@ export function Sidebar({
           const isAll = item.href === '/inbox';
           // Without the status check the Inbox row stayed lit while standing
           // in Snoozed or Closed, so two rows looked selected at once.
-          const active = isAll
+          const active = item.href.startsWith('/scheduled')
+            ? pathname.startsWith('/scheduled')
+            : isAll
             ? onInbox &&
               !activeInbox &&
               !searchParams.get('assignee') &&
