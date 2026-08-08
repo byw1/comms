@@ -47,6 +47,8 @@ export type ThreadMessage = {
   /** Set while a send is parked waiting for an unreachable Mac. */
   error?: string | null;
   authorName: string | null;
+  /** For approved shared drafts: whose words these were ("drafted by X"). */
+  draftedByName?: string | null;
   reactionType: string | null;
   createdAt: Date | string;
   sentAt: Date | string | null;
@@ -383,6 +385,12 @@ export function MessageThread({
                 {isOutbound && m.authorName && !isNote && !sameAsPrev && (
                   <span className="type-caption mb-1 px-1 font-medium text-muted-foreground">
                     {m.authorName}
+                    {m.draftedByName && (
+                      <span className="font-normal text-muted-foreground/70">
+                        {' '}
+                        · drafted by {m.draftedByName}
+                      </span>
+                    )}
                   </span>
                 )}
 

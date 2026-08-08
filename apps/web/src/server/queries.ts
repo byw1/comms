@@ -216,6 +216,7 @@ export async function listConversations(filter: ConversationFilter = {}) {
       assignee: { columns: { id: true, name: true, image: true } },
       inbox: { columns: { id: true, name: true, color: true } },
       tags: { with: { tag: true } },
+      bundle: { columns: { id: true, name: true } },
     },
   });
 }
@@ -453,5 +454,119 @@ export async function getPersonContext(
     recentMessages: Number(s?.recent ?? 0),
     photos: photoRows,
     photoCount: Number(photoTotal[0]?.n ?? 0),
+  };
+}
+
+export interface ThreadMedia {
+  photos: { id: string; fileName: string | null; at: Date }[];
+  files: { id: string; fileName: string | null; mimeType: string | null; sizeBytes: number | null; at: Date }[];
+  links: { url: string; at: Date; fromThem: boolean }[];
+}
+
+const LINK_RE = /https?:\/\/[^\s<>"')\]]+/g;
+
+/**
+ * Everything ever shared in a thread, in one place: photos as a grid, files
+ * as a list, links pulled out of message bodies. The attachment gallery every
+ * messaging app grows eventually, backed by three straightforward queries.
+ */
+export async function getThreadMedia(conversationId: string): Promise<ThreadMedia> {
+  const [photoRows, fileRows, linkMessages] = await Promise.all([
+    db
+      .select({ id: attachments.id, fileName: attachments.fileName, at: messages.createdAt })
+      .from(attachments)
+      .innerJoin(messages, eq(messages.id, attachments.messageId))
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          eq(attachments.status, 'stored'),
+          sql`${attachments.mimeType} like 'image/%'`,
+        ),
+      )
+      .orderBy(desc(messages.createdAt))
+      .limit(120),
+
+    db
+      .select({
+        id: attachments.id,
+        fileName: attachments.fileName,
+        mimeType: attachments.mimeType,
+        sizeBytes: attachments.sizeBytes,
+        at: messages.createdAt,
+      })
+      .from(attachments)
+      .innerJoin(messages, eq(messages.id, attachments.messageId))
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          eq(attachments.status, 'stored'),
+          sql`${attachments.mimeType} not like 'image/%'`,
+        ),
+      )
+      .orderBy(desc(messages.createdAt))
+      .limit(60),
+
+    db
+      .select({ body: messages.body, at: messages.createdAt, direction: messages.direction })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          sql`${messages.body} ~* '(https?://)'`,
+          eq(messages.isPrivateNote, false),
+        ),
+      )
+      .orderBy(desc(messages.createdAt))
+      .limit(80),
+  ]);
+
+  const seen = new Set<string>();
+  const links: ThreadMedia['links'] = [];
+  for (const m of linkMessages) {
+    for (const url of m.body?.match(LINK_RE) ?? []) {
+      const clean = url.replace(/[.,;:!?]+$/, '');
+      if (seen.has(clean)) continue;
+      seen.add(clean);
+      links.push({ url: clean, at: m.at, fromThem: m.direction === 'inbound' });
+    }
+  }
+
+  return { photos: photoRows, files: fileRows, links: links.slice(0, 50) };
+}
+
+export interface IntroContext {
+  /** Conversations we've had with this same person, this one included. */
+  conversationCount: number;
+  /** Their first message in THIS thread — where an introduction would be. */
+  firstInboundBody: string | null;
+  firstInboundAt: Date | null;
+}
+
+/** What we can say about who this is, before anyone decides how to answer. */
+export async function getIntroContext(
+  conversationId: string,
+  contactId: string | null,
+): Promise<IntroContext> {
+  const [count, firstInbound] = await Promise.all([
+    contactId
+      ? db
+          .select({ n: sql<number>`count(*)` })
+          .from(conversations)
+          .where(eq(conversations.contactId, contactId))
+      : Promise.resolve([{ n: 0 }]),
+    db.query.messages.findFirst({
+      where: and(
+        eq(messages.conversationId, conversationId),
+        eq(messages.direction, 'inbound'),
+      ),
+      orderBy: [asc(messages.createdAt)],
+      columns: { body: true, createdAt: true },
+    }),
+  ]);
+
+  return {
+    conversationCount: Number(count[0]?.n ?? 0),
+    firstInboundBody: firstInbound?.body ?? null,
+    firstInboundAt: firstInbound?.createdAt ?? null,
   };
 }

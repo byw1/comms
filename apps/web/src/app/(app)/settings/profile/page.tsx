@@ -1,6 +1,7 @@
 import { requireDbUser } from '@/lib/session';
 import { ProfileForm } from '@/components/settings/profile-form';
 import { PasswordForm } from '@/components/settings/password-form';
+import { SignatureForm } from '@/components/settings/signature-form';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -24,6 +25,15 @@ export default async function ProfileSettingsPage() {
         </CardHeader>
         <CardContent>
           <ProfileForm name={me.name ?? ''} image={me.image ?? ''} email={me.email} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Signature</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SignatureForm signature={me.preferences?.signature ?? ''} />
         </CardContent>
       </Card>
 

@@ -5,10 +5,19 @@ import {
   triageConversation,
   summarizeConversation,
   suggestReply,
+  assignBundles,
+  type BundleCandidate,
   type TranscriptMessage,
 } from '@comms/ai';
-import { getDb, eq, and, asc, desc, sql } from '@comms/db';
-import { conversations, messages, conversationTags, tagSuggestions } from '@comms/db';
+import { getDb, eq, and, asc, desc, inArray, isNull, sql } from '@comms/db';
+import {
+  conversations,
+  messages,
+  conversationTags,
+  tagSuggestions,
+  bundles,
+  appSettings,
+} from '@comms/db';
 
 const log = logger.child({ module: 'ai' });
 
@@ -173,6 +182,103 @@ async function triage(conversationId: string): Promise<void> {
   }
 }
 
+/**
+ * Bundle sweep: hand the model every active, un-bundled conversation and let
+ * it group the ones that belong together. Only unassigned threads are
+ * offered, so a manual "remove from bundle" or a dissolve sticks until the
+ * thread itself changes; dissolved bundle names are passed as forbidden.
+ */
+async function bundleSweep(): Promise<void> {
+  const db = getDb();
+
+  const rows = await db.query.conversations.findMany({
+    where: and(
+      inArray(conversations.status, ['open', 'pending']),
+      isNull(conversations.bundleId),
+    ),
+    orderBy: [desc(conversations.lastMessageAt)],
+    limit: 120,
+    columns: { id: true, title: true, lastMessagePreview: true, metadata: true },
+    with: { contact: { columns: { displayName: true } } },
+  });
+  if (rows.length < 3) return; // nothing worth grouping
+
+  const existing = await db.query.bundles.findMany();
+  const dismissedRow = await db.query.appSettings.findFirst({
+    where: eq(appSettings.key, 'bundles_dismissed'),
+  });
+  const forbidden = Array.isArray(dismissedRow?.value) ? (dismissedRow.value as string[]) : [];
+
+  const candidates: BundleCandidate[] = rows.map((r) => ({
+    conversationId: r.id,
+    name: r.contact?.displayName ?? r.title ?? 'Unknown',
+    topic: ((r.metadata as { ai?: { topic?: string } } | null)?.ai?.topic ?? null) || null,
+    preview: r.lastMessagePreview,
+  }));
+
+  let assignments;
+  try {
+    assignments = await assignBundles({
+      candidates,
+      existingBundles: existing.map((b) => b.name),
+      forbiddenNames: forbidden,
+    });
+  } catch (err) {
+    log.warn({ err: (err as Error).message }, 'bundle sweep failed');
+    return;
+  }
+
+  const byName = new Map(existing.map((b) => [b.name.toLowerCase(), b.id]));
+  let changed = 0;
+
+  for (const a of assignments) {
+    if (!a.bundle) continue;
+    let bundleId = byName.get(a.bundle.toLowerCase());
+    if (!bundleId) {
+      const [created] = await db
+        .insert(bundles)
+        .values({ name: a.bundle })
+        .onConflictDoUpdate({ target: bundles.name, set: { updatedAt: new Date() } })
+        .returning({ id: bundles.id });
+      if (!created) continue;
+      bundleId = created.id;
+      byName.set(a.bundle.toLowerCase(), bundleId);
+    }
+    await db
+      .update(conversations)
+      // Guard on "still unassigned": a human filing the thread mid-sweep wins.
+      .set({ bundleId })
+      .where(and(eq(conversations.id, a.conversationId), isNull(conversations.bundleId)));
+    changed += 1;
+  }
+
+  // Bundles whose last member left dissolve on their own — an empty group
+  // header in the list is clutter with a name.
+  await db.execute(sql`
+    delete from ${bundles} b
+    where not exists (select 1 from ${conversations} c where c.bundle_id = b.id)
+  `);
+
+  if (changed > 0) {
+    log.info({ assigned: changed }, 'bundle sweep applied');
+    // One coarse refresh signal — per-conversation events would stampede SSE.
+    const [first] = rows;
+    if (first) {
+      const conv = await db.query.conversations.findFirst({
+        where: eq(conversations.id, first.id),
+        columns: { id: true, inboxId: true },
+      });
+      if (conv) {
+        await publishEvent({
+          type: 'conversation.updated',
+          conversationId: conv.id,
+          inboxId: conv.inboxId,
+        });
+      }
+    }
+  }
+}
+
 export async function processAiJob(job: Job<AiJob>): Promise<void> {
   if (!isAiEnabled()) return;
   switch (job.data.type) {
@@ -180,5 +286,7 @@ export async function processAiJob(job: Job<AiJob>): Promise<void> {
       return triage(job.data.conversationId);
     case 'precompute':
       return precompute(job.data.conversationId);
+    case 'bundle':
+      return bundleSweep();
   }
 }

@@ -8,6 +8,7 @@ import {
   conversationParticipants,
   conversationTags,
   tags,
+  bundles,
 } from './conversations.js';
 import { messages, attachments, drafts } from './messages.js';
 
@@ -62,6 +63,11 @@ export const conversationsRelations = relations(conversations, ({ one, many }) =
   participants: many(conversationParticipants),
   tags: many(conversationTags),
   drafts: many(drafts),
+  bundle: one(bundles, { fields: [conversations.bundleId], references: [bundles.id] }),
+}));
+
+export const bundlesRelations = relations(bundles, ({ many }) => ({
+  conversations: many(conversations),
 }));
 
 export const messagesRelations = relations(messages, ({ one, many }) => ({

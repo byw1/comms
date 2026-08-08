@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { updateConversation, toggleTag } from '@/server/actions/inbox';
+import { undoToast } from '@/lib/undo';
 import { relativeTime } from '@/lib/format';
 import { PersonCard, type PersonCardProps } from '@/components/inbox/person-card';
 import { cn, initials } from '@/lib/utils';
@@ -137,6 +138,8 @@ export function TicketPanel({
     apply: () => void,
     revert: () => void,
     fn: () => Promise<{ ok: boolean; error?: string }>,
+    /** When present, success shows the standard undo toast running `inverse`. */
+    undo?: { label: string; inverse: () => Promise<{ ok: boolean; error?: string }> },
   ) {
     apply();
     start(async () => {
@@ -145,6 +148,14 @@ export function TicketPanel({
         revert();
         toast.error(res.error ?? 'Something went wrong');
       } else {
+        if (undo) {
+          undoToast(undo.label, undo.inverse, {
+            onUndone: () => {
+              revert();
+              router.refresh();
+            },
+          });
+        }
         router.refresh();
       }
     });
@@ -153,7 +164,8 @@ export function TicketPanel({
   const showSla = Boolean(sla?.slaBreachedAt || sla?.nextResponseDueAt || sla?.csatScore != null);
 
   return (
-    <aside className="flex h-full w-[85vw] max-w-[320px] shrink-0 flex-col overflow-y-auto border-l bg-surface lg:w-[288px]">
+    // Width, border and scrolling are owned by the DetailsPane that hosts this.
+    <div className="flex flex-col">
       {person ? (
         <PersonCard {...person} />
       ) : (
@@ -211,6 +223,10 @@ export function TicketPanel({
                   () => setAssigneeId(next),
                   () => setAssigneeId(prev),
                   () => updateConversation({ id: conversation.id, assigneeId: next }),
+                  {
+                    label: next ? 'Assignee changed' : 'Unassigned',
+                    inverse: () => updateConversation({ id: conversation.id, assigneeId: prev }),
+                  },
                 );
               }}
               disabled={pending}
@@ -242,6 +258,14 @@ export function TicketPanel({
                       id: conversation.id,
                       status: v as 'open' | 'pending' | 'snoozed' | 'closed',
                     }),
+                  {
+                    label: `Marked ${v}`,
+                    inverse: () =>
+                      updateConversation({
+                        id: conversation.id,
+                        status: prev as 'open' | 'pending' | 'snoozed' | 'closed',
+                      }),
+                  },
                 );
               }}
               disabled={pending}
@@ -271,6 +295,14 @@ export function TicketPanel({
                       id: conversation.id,
                       priority: v as 'low' | 'normal' | 'high' | 'urgent',
                     }),
+                  {
+                    label: `Priority set to ${v}`,
+                    inverse: () =>
+                      updateConversation({
+                        id: conversation.id,
+                        priority: prev as 'low' | 'normal' | 'high' | 'urgent',
+                      }),
+                  },
                 );
               }}
               disabled={pending}
@@ -366,6 +398,6 @@ export function TicketPanel({
       <Section label="Channel">
         <p className="text-[12.5px]">{conversation.inboxName}</p>
       </Section>
-    </aside>
+    </div>
   );
 }

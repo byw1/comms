@@ -19,6 +19,7 @@ type Settings = {
   assignStrategy?: 'round_robin' | 'least_busy';
   markReadOnReply?: boolean;
   csatEnabled?: boolean;
+  signature?: string;
 };
 
 export function InboxSettings({ inboxId, settings }: { inboxId: string; settings: Settings }) {
@@ -30,6 +31,7 @@ export function InboxSettings({ inboxId, settings }: { inboxId: string; settings
   );
   const [markRead, setMarkRead] = useState(Boolean(settings.markReadOnReply));
   const [csat, setCsat] = useState(Boolean(settings.csatEnabled));
+  const [signature, setSignature] = useState(settings.signature ?? '');
 
   function save(patch: Settings) {
     start(async () => {
@@ -93,6 +95,27 @@ export function InboxSettings({ inboxId, settings }: { inboxId: string; settings
             setMarkRead(v);
             save({ markReadOnReply: v });
           }}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <div>
+          <p className="text-sm font-medium">Inbox signature</p>
+          <p className="text-xs text-muted-foreground">
+            Appended to replies from this number when the sender has no personal signature.
+            Workspace → Signatures turns the whole mechanism on or off.
+          </p>
+        </div>
+        <textarea
+          value={signature}
+          onChange={(e) => setSignature(e.target.value)}
+          onBlur={() => {
+            if (signature !== (settings.signature ?? '')) save({ signature });
+          }}
+          rows={2}
+          maxLength={500}
+          placeholder="— The Acme team"
+          className="w-full resize-none rounded-lg border bg-transparent px-2.5 py-2 font-mono text-[12.5px] outline-none transition-colors focus:border-brand/50"
         />
       </div>
 

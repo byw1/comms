@@ -143,6 +143,13 @@ export const drafts = pgTable(
     /** The message being replied to, so the reply context survives too. */
     replyToMessageId: text('reply_to_message_id'),
 
+    /**
+     * Set when the author shared this draft with the team: any teammate can
+     * read it, load it into their own composer, or approve-and-send it. Null
+     * means private, which stays the default — see the table comment.
+     */
+    sharedAt: timestamp('shared_at', { withTimezone: true }),
+
     ...timestamps,
   },
   (d) => [

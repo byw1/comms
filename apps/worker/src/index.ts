@@ -4,6 +4,7 @@ import {
   createRedis,
   getRedis,
   loadConfig,
+  enqueueAi,
   enqueueMaintenance,
   logger,
 } from '@comms/core';
@@ -82,6 +83,14 @@ async function main() {
     try {
       await enqueueMaintenance({ type: 'unsnooze' });
       await enqueueMaintenance({ type: 'sla' });
+      // Promises age slowly; checking them hourly is plenty.
+      if (await due('nudges', 60 * 60)) {
+        await enqueueMaintenance({ type: 'nudges' });
+      }
+      // Bundling costs a model call — hourly, and only when AI is configured.
+      if (loadConfig().aiEnabled && (await due('bundle', 60 * 60))) {
+        await enqueueAi({ type: 'bundle' });
+      }
       const conns = await getDb()
         .select({ id: channelConnections.id })
         .from(channelConnections);

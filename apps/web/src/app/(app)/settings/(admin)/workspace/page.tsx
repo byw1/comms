@@ -1,6 +1,8 @@
 import { getOrgSettings, getSetting } from '@/server/settings';
+import { signaturesEnabled } from '@/server/signature';
 import { GeneralForm } from '@/components/settings/general-form';
 import { SlaForm } from '@/components/settings/sla-form';
+import { SignatureSettings } from '@/components/settings/signature-settings';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +12,7 @@ export default async function WorkspaceSettingsPage() {
   const sla =
     (await getSetting<{ firstResponseMinutes?: number; nextResponseMinutes?: number }>('sla')) ??
     {};
+  const sigEnabled = await signaturesEnabled();
 
   return (
     <div className="space-y-6">
@@ -26,6 +29,19 @@ export default async function WorkspaceSettingsPage() {
         </CardHeader>
         <CardContent>
           <GeneralForm orgName={org.orgName ?? 'Comms'} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Signatures</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SignatureSettings enabled={sigEnabled} />
+          <p className="mt-3 border-t pt-3 text-xs text-muted-foreground">
+            People write their personal signature under Settings → Profile; each inbox's fallback
+            signature lives under Settings → Inboxes.
+          </p>
         </CardContent>
       </Card>
 

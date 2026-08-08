@@ -98,6 +98,18 @@ export async function updateOrgName(orgName: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/**
+ * Workspace-level switch for the whole signature mechanism. Off means no
+ * signature is ever appended, regardless of what people have configured —
+ * the one-stop opt-out for teams that find signatures noisy over iMessage.
+ */
+export async function updateSignatureSettings(input: { enabled: boolean }): Promise<ActionResult> {
+  await requireAdmin();
+  await setSetting('signatures', { enabled: Boolean(input.enabled) });
+  revalidatePath('/settings/workspace');
+  return { ok: true };
+}
+
 export async function updateSlaSettings(input: {
   firstResponseMinutes?: number;
   nextResponseMinutes?: number;

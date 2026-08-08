@@ -17,6 +17,18 @@ import { users } from './auth.js';
 import { teams } from './teams.js';
 
 /**
+ * An AI-maintained grouping of similar active conversations ("Order updates",
+ * "Scheduling", …). Unlike a tag, a bundle is decided by the model rather than
+ * built by hand, and membership is a single slot: a conversation belongs to at
+ * most one bundle, because the list can only group a row under one header.
+ */
+export const bundles = pgTable('bundles', {
+  id: text('id').primaryKey().$defaultFn(genId('bndl')),
+  name: text('name').notNull().unique(),
+  ...timestamps,
+});
+
+/**
  * A conversation thread. In Comms a conversation *is* the ticket — it carries
  * status, assignee, priority and a human ticket `number`.
  */
@@ -50,6 +62,16 @@ export const conversations = pgTable(
     followUpAt: timestamp('follow_up_at', { withTimezone: true }),
     followUpArmedAt: timestamp('follow_up_armed_at', { withTimezone: true }),
     followUpUserId: text('follow_up_user_id').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * Muted: the thread stays exactly where it is, but stops demanding
+     * attention — no unread badge, no notification sound. Permanent until
+     * unmuted, which is what makes it different from a snooze: a snooze hides
+     * and comes back; a mute stays visible and stays quiet. Group chats are
+     * the reason this exists.
+     */
+    mutedAt: timestamp('muted_at', { withTimezone: true }),
+    /** AI-assigned bundle (see `bundles`). Null = not grouped. */
+    bundleId: text('bundle_id').references(() => bundles.id, { onDelete: 'set null' }),
 
     // Activity denormalizations for fast list rendering
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }),

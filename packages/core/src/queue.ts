@@ -48,7 +48,9 @@ export type MaintenanceJob =
   /** Reset blank names written before the empty-string fallthrough was fixed. */
   | { type: 'repairNames' }
   /** Attach contacts to conversations that never got one from a message handle. */
-  | { type: 'repairContacts' };
+  | { type: 'repairContacts' }
+  /** Scan recent outbound replies for broken promises ("I'll send it Friday"). */
+  | { type: 'nudges' };
 
 /**
  * Background AI work. `precompute` runs on every inbound message so the draft
@@ -57,7 +59,9 @@ export type MaintenanceJob =
  */
 export type AiJob =
   | { type: 'triage'; conversationId: string }
-  | { type: 'precompute'; conversationId: string };
+  | { type: 'precompute'; conversationId: string }
+  /** Group active conversations into named bundles (Shortwave-style). */
+  | { type: 'bundle' };
 
 // ---- Queue singletons -------------------------------------------------------
 

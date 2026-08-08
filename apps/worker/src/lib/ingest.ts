@@ -296,7 +296,9 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
       lastMessageAt: sentAt,
       lastMessagePreview: preview,
       ...(isInbound ? { lastInboundAt: sentAt } : {}),
-      ...(isInbound
+      // A muted thread keeps receiving messages but never counts them as
+      // unread — no badge, no bold row, no sound. That's the whole feature.
+      ...(isInbound && !conversation.mutedAt
         ? { unreadCount: (conversation.unreadCount ?? 0) + 1 }
         : {}),
       // An inbound message pulls the thread back into the inbox from wherever

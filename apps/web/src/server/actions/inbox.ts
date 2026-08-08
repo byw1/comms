@@ -23,6 +23,7 @@ import { desc } from '@comms/db';
 import { db } from '@/server/db';
 import { requireUser } from '@/lib/session';
 import { getConnectionForInbox } from '@/server/queries';
+import { appendSignature, resolveSignature } from '@/server/signature';
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -75,9 +76,14 @@ export async function sendMessage(input: {
   replyToMessageGuid?: string;
   /** ISO timestamp to deliberately delay delivery until (scheduled send). */
   scheduledFor?: string;
+  /**
+   * When approving a teammate's shared draft, who actually wrote the words.
+   * Display metadata only — the sender of record is always the caller.
+   */
+  draftedByUserId?: string;
 }): Promise<SendResult> {
   const user = await requireUser();
-  const body = input.body.trim();
+  let body = input.body.trim();
   if (!body) return { ok: false, error: 'Message is empty.' };
 
   const conv = await db.query.conversations.findFirst({
@@ -109,6 +115,23 @@ export async function sendMessage(input: {
   const scheduledAt =
     !input.isPrivateNote && input.scheduledFor ? new Date(input.scheduledFor) : null;
 
+  // Signature happens at send time, not in the composer: it belongs to the
+  // send, and appending it here means every path (send now, send later,
+  // approve a shared draft) signs consistently.
+  if (!input.isPrivateNote) {
+    body = appendSignature(body, await resolveSignature(user.id, conv.inboxId));
+  }
+
+  // Attribution for shared drafts: "drafted by X, sent by Y".
+  let draftedBy: { userId: string; name: string | null } | null = null;
+  if (input.draftedByUserId && input.draftedByUserId !== user.id) {
+    const author = await db.query.users.findFirst({
+      where: eq(users.id, input.draftedByUserId),
+      columns: { id: true, name: true },
+    });
+    if (author) draftedBy = { userId: author.id, name: author.name };
+  }
+
   const [msg] = await db
     .insert(messages)
     .values({
@@ -123,10 +146,16 @@ export async function sendMessage(input: {
       replyToMessageGuid: input.replyToMessageGuid ?? null,
       sentAt: input.isPrivateNote ? new Date() : null,
       scheduledFor: scheduledAt,
+      ...(draftedBy ? { metadata: { draftedBy } } : {}),
     })
     .returning();
 
   if (!msg) return { ok: false, error: 'Failed to create message.' };
+
+  // Replying resolves a pending nudge — the promise was (presumably) kept.
+  const convMeta = (conv.metadata ?? {}) as Record<string, unknown>;
+  const clearNudge = !input.isPrivateNote && convMeta.nudge;
+  if (clearNudge) delete convMeta.nudge;
 
   await db
     .update(conversations)
@@ -137,6 +166,7 @@ export async function sendMessage(input: {
       firstResponseAt: conv.firstResponseAt ?? (input.isPrivateNote ? null : new Date()),
       // A real reply (not an internal note) satisfies the SLA response clock.
       ...(input.isPrivateNote ? {} : { nextResponseDueAt: null, slaBreachedAt: null }),
+      ...(clearNudge ? { metadata: convMeta } : {}),
     })
     .where(eq(conversations.id, conv.id));
 
@@ -396,5 +426,60 @@ export async function markRead(conversationId: string): Promise<ActionResult> {
     .update(conversations)
     .set({ unreadCount: 0 })
     .where(eq(conversations.id, conversationId));
+  return { ok: true };
+}
+
+/**
+ * Mute or unmute a conversation. A muted thread stays exactly where it is and
+ * keeps receiving messages — it just stops counting as unread and stops
+ * making noise. Permanent until unmuted, which is the difference from snooze.
+ */
+export async function setMuted(conversationId: string, muted: boolean): Promise<ActionResult> {
+  await requireUser();
+  const conv = await db.query.conversations.findFirst({
+    where: eq(conversations.id, conversationId),
+    columns: { id: true, inboxId: true },
+  });
+  if (!conv) return { ok: false, error: 'Conversation not found.' };
+
+  await db
+    .update(conversations)
+    .set({
+      mutedAt: muted ? new Date() : null,
+      // Muting also silences what already piled up — that pile is why you
+      // reached for the button.
+      ...(muted ? { unreadCount: 0 } : {}),
+    })
+    .where(eq(conversations.id, conversationId));
+
+  await publishEvent({ type: 'conversation.updated', conversationId, inboxId: conv.inboxId });
+  revalidatePath('/inbox');
+  revalidatePath(`/inbox/${conversationId}`);
+  return { ok: true };
+}
+
+/**
+ * Dismiss a nudge ("you said you'd send this…"). Remembered per promise: the
+ * same message never nudges twice, but a NEW promise in a later reply can.
+ */
+export async function dismissNudge(conversationId: string): Promise<ActionResult> {
+  await requireUser();
+  const conv = await db.query.conversations.findFirst({
+    where: eq(conversations.id, conversationId),
+    columns: { id: true, inboxId: true, metadata: true },
+  });
+  if (!conv) return { ok: false, error: 'Conversation not found.' };
+
+  const meta = (conv.metadata ?? {}) as Record<string, unknown>;
+  const nudge = meta.nudge as Record<string, unknown> | undefined;
+  if (!nudge) return { ok: true };
+
+  await db
+    .update(conversations)
+    .set({ metadata: { ...meta, nudge: { ...nudge, dismissedAt: new Date().toISOString() } } })
+    .where(eq(conversations.id, conversationId));
+
+  await publishEvent({ type: 'conversation.updated', conversationId, inboxId: conv.inboxId });
+  revalidatePath(`/inbox/${conversationId}`);
   return { ok: true };
 }

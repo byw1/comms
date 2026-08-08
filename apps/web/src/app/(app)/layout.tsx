@@ -84,7 +84,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         tags={tagRows.map((t) => ({ id: t.id, name: t.name }))}
         isAdmin={isAdminRole(user.role)}
       />
-      <NewConversation />
+      <NewConversation
+        inboxes={inboxRows
+          .filter((i) => i.connections.length > 0)
+          .map((i) => ({ id: i.id, name: i.name, color: i.color, isDefault: i.isDefault }))}
+      />
       {/* One listener for the whole app: `c`, ⌘K and the jump keys should work
           from settings too, not only inside the inbox. */}
       <KeyboardShortcuts />

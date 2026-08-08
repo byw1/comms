@@ -5,9 +5,12 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { MessageThread, type ThreadMessage } from '@/components/inbox/message-thread';
 import { Composer } from '@/components/inbox/composer';
+import { SharedDraftsPanel, type SharedDraftItem } from '@/components/inbox/shared-drafts';
 import { useCurrentUser } from '@/components/app/realtime-provider';
 import type { MacroOption } from '@/components/inbox/macro-picker';
+import type { BusinessHours } from '@/lib/availability';
 import { sendMessage, undoSend } from '@/server/actions/inbox';
+import { restoreSharedDraft, sendSharedDraft } from '@/server/actions/drafts';
 
 type PendingMessage = ThreadMessage & { realId?: string; addedAt: number };
 
@@ -32,6 +35,12 @@ export function ThreadShell({
   aiDraft,
   initialDraft,
   canReact = false,
+  sharedDrafts = [],
+  isAdmin = false,
+  businessHours,
+  signaturePreview,
+  viaInbox,
+  onSent,
 }: {
   conversationId: string;
   messages: ThreadMessage[];
@@ -39,8 +48,16 @@ export function ThreadShell({
   aiEnabled: boolean;
   aiDraft?: string | null;
   /** The signed-in user's unsent draft for this conversation. */
-  initialDraft?: { body: string; isPrivateNote: boolean } | null;
+  initialDraft?: { body: string; isPrivateNote: boolean; shared?: boolean } | null;
   canReact?: boolean;
+  /** Teammates' drafts shared for review on this conversation. */
+  sharedDrafts?: SharedDraftItem[];
+  isAdmin?: boolean;
+  businessHours?: BusinessHours | null;
+  signaturePreview?: string | null;
+  viaInbox?: { name: string; color: string } | null;
+  /** Focus mode advances the stack after a successful reply. */
+  onSent?: () => void;
 }) {
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   const router = useRouter();
@@ -154,7 +171,71 @@ export function ThreadShell({
         },
       });
     }
+    if (!isNote) onSent?.();
     return true;
+  }
+
+  /** Approve a teammate's shared draft: send it with attribution + undo. */
+  async function handleApprove(authorUserId: string) {
+    const draft = sharedDrafts.find((d) => d.authorUserId === authorUserId);
+    if (!draft) return;
+
+    counter.current += 1;
+    const tempId = `optimistic-${counter.current}`;
+    setPending((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        body: draft.body,
+        authorType: 'agent',
+        direction: 'outbound',
+        isPrivateNote: false,
+        status: 'queued',
+        authorName: me?.name ?? null,
+        draftedByName: draft.authorName,
+        reactionType: null,
+        createdAt: new Date(),
+        sentAt: new Date(),
+        readAt: null,
+        deliveredAt: null,
+        attachments: [],
+        addedAt: Date.now(),
+      },
+    ]);
+
+    const res = await sendSharedDraft(conversationId, authorUserId);
+    if (!res.ok) {
+      setPending((prev) => prev.filter((p) => p.id !== tempId));
+      toast.error(res.error);
+      return;
+    }
+    setPending((prev) => prev.map((p) => (p.id === tempId ? { ...p, realId: res.messageId } : p)));
+    router.refresh();
+
+    if (res.undoMs > 0) {
+      const messageId = res.messageId;
+      toast(`Sending ${draft.authorName ?? 'teammate'}’s draft`, {
+        duration: Math.max(res.undoMs - 500, 1500),
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            void (async () => {
+              const undo = await undoSend(messageId);
+              if (undo.ok) {
+                // Undoing the send puts the draft back where it was.
+                await restoreSharedDraft(conversationId, authorUserId, draft.body).catch(() => {});
+                setPending((prev) => prev.filter((p) => p.realId !== messageId));
+                toast.success('Message unsent — the draft is back for review');
+                router.refresh();
+              } else {
+                toast.error(undo.error);
+              }
+            })();
+          },
+        },
+      });
+    }
+    onSent?.();
   }
 
   const merged = useMemo(() => {
@@ -170,6 +251,15 @@ export function ThreadShell({
         canReact={canReact}
         onReplyTo={setReplyTo}
       />
+      <SharedDraftsPanel
+        conversationId={conversationId}
+        drafts={sharedDrafts}
+        isAdmin={isAdmin}
+        onApprove={handleApprove}
+        onEdit={(body) =>
+          window.dispatchEvent(new CustomEvent('comms:load-draft', { detail: { body } }))
+        }
+      />
       <Composer
         conversationId={conversationId}
         macros={macros}
@@ -179,6 +269,9 @@ export function ThreadShell({
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
         onSubmit={handleSubmit}
+        businessHours={businessHours}
+        signaturePreview={signaturePreview}
+        viaInbox={viaInbox}
       />
     </>
   );

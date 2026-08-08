@@ -15,11 +15,19 @@ import {
 } from '@/server/actions/new-conversation';
 import { cn, initials } from '@/lib/utils';
 
+export interface ComposeInbox {
+  id: string;
+  name: string;
+  color: string;
+  isDefault: boolean;
+}
+
 /**
  * Compose a message to someone new. Opened with `c` (Superhuman's compose key)
- * or the pencil button. Two steps: pick a recipient, write the message.
+ * or the pencil button. Two steps: pick a recipient, write the message —
+ * choosing which of your numbers it goes out from when there's more than one.
  */
-export function NewConversation() {
+export function NewConversation({ inboxes = [] }: { inboxes?: ComposeInbox[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -27,7 +35,11 @@ export function NewConversation() {
   const [active, setActive] = useState(0);
   const [picked, setPicked] = useState<RecipientSuggestion | null>(null);
   const [body, setBody] = useState('');
+  const [fromInboxId, setFromInboxId] = useState<string | null>(null);
   const [pending, start] = useTransition();
+
+  const defaultInboxId = inboxes.find((i) => i.isDefault)?.id ?? inboxes[0]?.id ?? null;
+  const sendFrom = fromInboxId ?? defaultInboxId;
 
   useEffect(() => {
     const onOpen = () => {
@@ -72,7 +84,11 @@ export function NewConversation() {
   function send() {
     if (!picked || !body.trim()) return;
     start(async () => {
-      const res = await startConversation({ address: picked.address, message: body });
+      const res = await startConversation({
+        address: picked.address,
+        message: body,
+        inboxId: sendFrom ?? undefined,
+      });
       if (!res.ok) {
         toast.error(res.error);
         return;
@@ -165,6 +181,30 @@ export function NewConversation() {
                 </button>
               </span>
             </div>
+
+            {/* Per-number send routing: which of your numbers this goes from.
+                A single-number workspace never sees this row. */}
+            {inboxes.length > 1 && (
+              <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
+                <span className="text-[12px] text-muted-foreground">From</span>
+                {inboxes.map((i) => (
+                  <button
+                    key={i.id}
+                    type="button"
+                    onClick={() => setFromInboxId(i.id)}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-md border px-2 py-1 text-[12px] font-medium transition-all active:scale-95',
+                      sendFrom === i.id
+                        ? 'border-brand bg-brand-muted text-brand'
+                        : 'text-muted-foreground hover:border-border-strong hover:bg-accent',
+                    )}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: i.color }} />
+                    {i.name}
+                  </button>
+                ))}
+              </div>
+            )}
             <Textarea
               autoFocus
               value={body}

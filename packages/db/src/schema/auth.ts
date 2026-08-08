@@ -13,6 +13,12 @@ export interface UserPreferences {
   /** Play a short tone when a new notification lands while the app is open. */
   notificationSound?: boolean;
   /**
+   * Personal signature appended to outbound replies. Takes precedence over
+   * the inbox signature; both are inert unless the workspace has signatures
+   * enabled. Empty/unset means "no personal signature".
+   */
+  signature?: string;
+  /**
    * Keyboard shortcuts. Stored as a preset plus a diff rather than a full map,
    * so an action added in a later version picks up its default instead of
    * silently having no binding.
@@ -31,12 +37,13 @@ export interface UserPreferences {
 export const notificationDefaults = {
   notifyMentions: true,
   notificationSound: false,
-} satisfies Omit<Required<UserPreferences>, 'keymap'>;
+} satisfies Omit<Required<UserPreferences>, 'keymap' | 'signature'>;
 
 /** Read a user's preferences with the defaults filled in for anything unset. */
 export function resolvePreferences(
   preferences: UserPreferences | null | undefined,
-): Omit<Required<UserPreferences>, 'keymap'> & Pick<UserPreferences, 'keymap'> {
+): Omit<Required<UserPreferences>, 'keymap' | 'signature'> &
+  Pick<UserPreferences, 'keymap' | 'signature'> {
   return { ...notificationDefaults, ...(preferences ?? {}) };
 }
 

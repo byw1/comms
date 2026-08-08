@@ -1,9 +1,11 @@
 'use server';
 
-import { and, eq, desc, sql } from '@comms/db';
-import { drafts, conversations } from '@comms/db';
+import { and, eq, desc, isNotNull, sql } from '@comms/db';
+import { drafts, conversations, users } from '@comms/db';
+import { publishEvent } from '@comms/core';
 import { db } from '@/server/db';
-import { requireUser } from '@/lib/session';
+import { isAdminRole, requireUser } from '@/lib/session';
+import { sendMessage, type SendResult } from './inbox';
 
 /**
  * Unsent replies, kept server-side rather than in localStorage.
@@ -109,12 +111,173 @@ export async function myDraftConversationIds(userId: string): Promise<string[]> 
 /** The caller's draft for one conversation, for restoring the composer. */
 export async function getMyDraft(
   conversationId: string,
-): Promise<{ body: string; isPrivateNote: boolean } | null> {
+): Promise<{ body: string; isPrivateNote: boolean; shared: boolean } | null> {
   const me = await requireUser();
   const [row] = await db
-    .select({ body: drafts.body, isPrivateNote: drafts.isPrivateNote })
+    .select({ body: drafts.body, isPrivateNote: drafts.isPrivateNote, sharedAt: drafts.sharedAt })
     .from(drafts)
     .where(and(eq(drafts.conversationId, conversationId), eq(drafts.userId, me.id)))
     .limit(1);
-  return row ?? null;
+  if (!row) return null;
+  return { body: row.body, isPrivateNote: row.isPrivateNote, shared: Boolean(row.sharedAt) };
+}
+
+// ---- Shared drafts ----------------------------------------------------------
+//
+// The Front/Missive flow: one person writes the reply, someone else approves
+// and sends it. A shared draft is just a draft with `sharedAt` set — the text
+// stays owned by its author (they keep editing it from their own composer),
+// and any teammate can send it, load it into their composer to rework it, or
+// hand it back.
+
+export interface SharedDraft {
+  conversationId: string;
+  authorUserId: string;
+  authorName: string | null;
+  body: string;
+  sharedAt: Date;
+  updatedAt: Date;
+  /** True when this is the caller's own shared draft. */
+  mine: boolean;
+}
+
+/** Share the caller's current draft with the team for review. */
+export async function shareMyDraft(conversationId: string): Promise<{ ok: boolean; error?: string }> {
+  const me = await requireUser();
+  const [row] = await db
+    .update(drafts)
+    .set({ sharedAt: new Date() })
+    .where(
+      and(
+        eq(drafts.conversationId, conversationId),
+        eq(drafts.userId, me.id),
+        // Only replies can be shared — an internal note is already visible
+        // to the team the moment it's posted.
+        eq(drafts.isPrivateNote, false),
+        sql`length(btrim(${drafts.body})) > 0`,
+      ),
+    )
+    .returning({ conversationId: drafts.conversationId });
+  if (!row) return { ok: false, error: 'Write the draft first, then share it.' };
+
+  const conv = await db.query.conversations.findFirst({
+    where: eq(conversations.id, conversationId),
+    columns: { inboxId: true },
+  });
+  if (conv) {
+    await publishEvent({ type: 'conversation.updated', conversationId, inboxId: conv.inboxId });
+  }
+  return { ok: true };
+}
+
+/**
+ * Take a shared draft back to private. The author can always do this; an
+ * admin can too (their "discard" of someone's proposal returns it rather than
+ * destroying their words).
+ */
+export async function unshareDraft(
+  conversationId: string,
+  authorUserId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const me = await requireUser();
+  if (me.id !== authorUserId && !isAdminRole(me.role)) {
+    return { ok: false, error: 'Only the author or an admin can put a shared draft back.' };
+  }
+  await db
+    .update(drafts)
+    .set({ sharedAt: null })
+    .where(and(eq(drafts.conversationId, conversationId), eq(drafts.userId, authorUserId)));
+
+  const conv = await db.query.conversations.findFirst({
+    where: eq(conversations.id, conversationId),
+    columns: { inboxId: true },
+  });
+  if (conv) {
+    await publishEvent({ type: 'conversation.updated', conversationId, inboxId: conv.inboxId });
+  }
+  return { ok: true };
+}
+
+/**
+ * Approve a teammate's shared draft and send it. The message goes out under
+ * the approver's name with "drafted by" attribution in its metadata, and the
+ * draft is consumed. Sending runs through `sendMessage`, so the undo window,
+ * signatures, STOP guards and optimistic UI all apply unchanged.
+ */
+export async function sendSharedDraft(
+  conversationId: string,
+  authorUserId: string,
+): Promise<SendResult> {
+  await requireUser();
+  const [draft] = await db
+    .select({ body: drafts.body, sharedAt: drafts.sharedAt })
+    .from(drafts)
+    .where(and(eq(drafts.conversationId, conversationId), eq(drafts.userId, authorUserId)))
+    .limit(1);
+  if (!draft?.sharedAt || !draft.body.trim()) {
+    return { ok: false, error: 'That draft is no longer shared.' };
+  }
+
+  const res = await sendMessage({
+    conversationId,
+    body: draft.body,
+    draftedByUserId: authorUserId,
+  });
+  if (res.ok) {
+    await db
+      .delete(drafts)
+      .where(and(eq(drafts.conversationId, conversationId), eq(drafts.userId, authorUserId)));
+  }
+  return res;
+}
+
+/**
+ * Put a consumed shared draft back after an undone send. Only writes when the
+ * author has no draft on the conversation (they may have started a new one in
+ * the meantime — never overwrite that).
+ */
+export async function restoreSharedDraft(
+  conversationId: string,
+  authorUserId: string,
+  body: string,
+): Promise<{ ok: boolean }> {
+  await requireUser();
+  if (!body.trim()) return { ok: true };
+  await db
+    .insert(drafts)
+    .values({
+      conversationId,
+      userId: authorUserId,
+      body,
+      isPrivateNote: false,
+      sharedAt: new Date(),
+    })
+    .onConflictDoNothing();
+  return { ok: true };
+}
+
+/** Every shared draft on a conversation, the caller's own included. */
+export async function listSharedDrafts(conversationId: string): Promise<SharedDraft[]> {
+  const me = await requireUser();
+  const rows = await db
+    .select({
+      conversationId: drafts.conversationId,
+      authorUserId: drafts.userId,
+      authorName: users.name,
+      body: drafts.body,
+      sharedAt: drafts.sharedAt,
+      updatedAt: drafts.updatedAt,
+    })
+    .from(drafts)
+    .innerJoin(users, eq(users.id, drafts.userId))
+    .where(
+      and(
+        eq(drafts.conversationId, conversationId),
+        isNotNull(drafts.sharedAt),
+        eq(drafts.isPrivateNote, false),
+        sql`length(btrim(${drafts.body})) > 0`,
+      ),
+    )
+    .orderBy(desc(drafts.sharedAt));
+  return rows.map((r) => ({ ...r, sharedAt: r.sharedAt!, mine: r.authorUserId === me.id }));
 }

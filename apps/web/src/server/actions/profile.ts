@@ -73,6 +73,24 @@ export async function changePassword(input: {
   return { ok: true };
 }
 
+/** Save your personal signature (empty string removes it). */
+export async function updateSignaturePreference(signature: string): Promise<ActionResult> {
+  const me = await requireUser();
+  const trimmed = signature.trim().slice(0, 500);
+
+  const row = await db.query.users.findFirst({
+    where: eq(users.id, me.id),
+    columns: { preferences: true },
+  });
+  const preferences: UserPreferences = { ...(row?.preferences ?? {}) };
+  if (trimmed) preferences.signature = trimmed;
+  else delete preferences.signature;
+
+  await db.update(users).set({ preferences }).where(eq(users.id, me.id));
+  revalidatePath('/settings/profile');
+  return { ok: true };
+}
+
 /** Merge a patch into your own notification preferences. */
 export async function updateNotificationPreferences(patch: UserPreferences): Promise<ActionResult> {
   const me = await requireUser();

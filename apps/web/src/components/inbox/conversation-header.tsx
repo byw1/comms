@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Check, RotateCcw, Clock, ChevronLeft, PanelRight } from 'lucide-react';
+import { Check, RotateCcw, Clock, ChevronLeft, PanelRight, Bell, BellOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -14,12 +14,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { updateConversation, setFollowUp } from '@/server/actions/inbox';
+import { updateConversation, setFollowUp, setMuted } from '@/server/actions/inbox';
 import { PresenceBar } from '@/components/inbox/presence-bar';
 import { SNOOZE_PRESETS, FOLLOW_UP_PRESETS } from '@/lib/snooze';
 import { CustomTimePicker } from '@/components/inbox/time-picker';
 import { describeTime } from '@/lib/parse-time';
 import { siblingConversationId } from '@/lib/inbox-nav';
+import { undoToast } from '@/lib/undo';
 import { cn } from '@/lib/utils';
 
 /** Status is a dot + label rather than a filled chip — quieter in a header. */
@@ -35,18 +36,22 @@ export function ConversationHeader({
   number,
   name,
   status: serverStatus,
+  muted: serverMuted = false,
 }: {
   conversationId: string;
   number: number;
   name: string;
   status: string;
+  muted?: boolean;
 }) {
   const router = useRouter();
   const [, start] = useTransition();
   // Optimistic status: flips instantly on click, server props reconcile later.
   const [status, setStatus] = useState(serverStatus);
+  const [muted, setMutedLocal] = useState(serverMuted);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   useEffect(() => setStatus(serverStatus), [serverStatus]);
+  useEffect(() => setMutedLocal(serverMuted), [serverMuted]);
 
   // The global `s` shortcut opens the snooze menu for the open conversation.
   useEffect(() => {
@@ -65,10 +70,37 @@ export function ConversationHeader({
         setStatus(prev);
         toast.error(res.error);
       } else if (goNext !== null) {
+        undoToast('Conversation closed', () =>
+          updateConversation({ id: conversationId, status: prev as 'open' | 'pending' }),
+        );
         router.push(goNext);
       } else {
         router.refresh();
       }
+    });
+  }
+
+  function toggleMute() {
+    const next = !muted;
+    setMutedLocal(next);
+    start(async () => {
+      const res = await setMuted(conversationId, next);
+      if (!res.ok) {
+        setMutedLocal(!next);
+        toast.error(res.error);
+        return;
+      }
+      if (next) {
+        undoToast('Muted — stays in place, stops notifying', () => setMuted(conversationId, false), {
+          onUndone: () => {
+            setMutedLocal(false);
+            router.refresh();
+          },
+        });
+      } else {
+        toast.success('Unmuted');
+      }
+      router.refresh();
     });
   }
 
@@ -92,7 +124,10 @@ export function ConversationHeader({
     start(async () => {
       const res = await setFollowUp(conversationId, until.toISOString());
       if (!res.ok) toast.error(res.error);
-      else toast.success(`We'll bump this ${label.toLowerCase()} if they don't reply`);
+      else
+        undoToast(`We'll bump this ${label.toLowerCase()} if they don't reply`, () =>
+          setFollowUp(conversationId, null),
+        );
     });
   }
 
@@ -114,7 +149,13 @@ export function ConversationHeader({
         setStatus(prev);
         toast.error(res.error);
       } else {
-        toast.success(`Snoozed until ${label.toLowerCase()}`);
+        undoToast(`Snoozed until ${label.toLowerCase()}`, () =>
+          updateConversation({
+            id: conversationId,
+            status: (prev === 'closed' ? 'open' : prev) as 'open' | 'pending',
+            snoozedUntil: null,
+          }),
+        );
         router.push(goNext);
       }
     });
@@ -138,12 +179,36 @@ export function ConversationHeader({
           <span className={cn('h-1.5 w-1.5 rounded-full', STATUS_DOT[status])} />
           {status}
         </span>
+        {muted && (
+          <span
+            className="flex shrink-0 items-center gap-1 text-[11.5px] text-muted-foreground"
+            title="Muted — no unread badge, no notifications"
+          >
+            <BellOff className="h-3 w-3" />
+            <span className="hidden sm:inline">muted</span>
+          </span>
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-1 md:gap-2">
         <div className="hidden sm:block">
           <PresenceBar conversationId={conversationId} />
         </div>
+
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          onClick={toggleMute}
+          aria-label={muted ? 'Unmute conversation' : 'Mute conversation'}
+          title={
+            muted
+              ? 'Unmute — start counting unread again'
+              : 'Mute — stays here, stops notifying (great for group chats)'
+          }
+          className={cn(muted && 'text-warning')}
+        >
+          {muted ? <BellOff className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
+        </Button>
 
         {status !== 'closed' && (
           <DropdownMenu open={snoozeOpen} onOpenChange={setSnoozeOpen}>

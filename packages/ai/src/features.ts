@@ -123,6 +123,120 @@ export async function triageConversation(input: {
   };
 }
 
+export interface BundleCandidate {
+  conversationId: string;
+  /** Who the thread is with. */
+  name: string;
+  /** AI topic from triage, when available. */
+  topic: string | null;
+  /** Last message preview. */
+  preview: string | null;
+}
+
+export interface BundleAssignment {
+  conversationId: string;
+  /** Bundle name to place the conversation in, or null to leave it alone. */
+  bundle: string | null;
+}
+
+const BUNDLE_TOOL: Anthropic.Tool = {
+  name: 'record_bundles',
+  description: 'Record which bundle, if any, each conversation belongs to.',
+  input_schema: {
+    type: 'object' as const,
+    additionalProperties: false,
+    properties: {
+      assignments: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            conversationId: { type: 'string' },
+            bundle: {
+              type: ['string', 'null'],
+              description:
+                'Bundle name (1–3 words, Title Case), or null when the conversation fits no group.',
+            },
+          },
+          required: ['conversationId', 'bundle'],
+        },
+      },
+    },
+    required: ['assignments'],
+  },
+};
+
+/**
+ * Group similar conversations into named bundles — the deciding half of
+ * auto-labeling. The acting half already exists (tags, automations); this
+ * call only says which threads belong together and what to call the group.
+ *
+ * The prompt is biased toward NOT bundling: a bundle with two loosely-related
+ * threads costs more attention than it saves, and `null` is always allowed.
+ */
+export async function assignBundles(input: {
+  candidates: BundleCandidate[];
+  existingBundles: string[];
+  /** Names the team dissolved — never recreate these. */
+  forbiddenNames: string[];
+}): Promise<BundleAssignment[]> {
+  if (input.candidates.length === 0) return [];
+
+  const lines = input.candidates
+    .map(
+      (c) =>
+        `- id=${c.conversationId} · with ${c.name}${c.topic ? ` · topic: ${c.topic}` : ''}${
+          c.preview ? ` · last: ${c.preview.slice(0, 120)}` : ''
+        }`,
+    )
+    .join('\n');
+
+  const res = await getAnthropic().messages.create({
+    model: getModel(),
+    max_tokens: 2000,
+    system: [
+      'You organize a shared text-message inbox by grouping similar conversations into bundles.',
+      'A bundle is a short Title Case name like "Order Updates", "Scheduling", "Billing Questions".',
+      'Reuse an existing bundle name whenever one fits. Only invent a new bundle when THREE or more conversations clearly share a theme.',
+      'Most conversations belong to no bundle — assign null freely. Never bundle on superficial similarity.',
+      input.forbiddenNames.length
+        ? `Never use these bundle names (the team removed them): ${input.forbiddenNames.join(', ')}.`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
+    messages: [
+      {
+        role: 'user',
+        content: `Existing bundles: ${
+          input.existingBundles.length ? input.existingBundles.join(', ') : '(none)'
+        }\n\nConversations:\n${lines}`,
+      },
+    ],
+    tools: [BUNDLE_TOOL],
+    tool_choice: { type: 'tool' as const, name: 'record_bundles' },
+  });
+
+  const block = res.content.find((b) => b.type === 'tool_use');
+  const data = (block && 'input' in block ? block.input : {}) as {
+    assignments?: Array<{ conversationId?: unknown; bundle?: unknown }>;
+  };
+  if (!Array.isArray(data.assignments)) return [];
+
+  const known = new Set(input.candidates.map((c) => c.conversationId));
+  const forbidden = new Set(input.forbiddenNames.map((n) => n.toLowerCase()));
+  const out: BundleAssignment[] = [];
+  for (const a of data.assignments) {
+    const id = String(a.conversationId ?? '');
+    if (!known.has(id)) continue;
+    let bundle = a.bundle == null ? null : String(a.bundle).trim().slice(0, 40);
+    if (bundle && forbidden.has(bundle.toLowerCase())) bundle = null;
+    out.push({ conversationId: id, bundle: bundle || null });
+  }
+  return out;
+}
+
 /**
  * One excerpt handed to the archive Q&A, with enough context to be cited.
  */

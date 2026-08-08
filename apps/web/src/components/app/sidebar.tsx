@@ -15,6 +15,7 @@ import {
   Pencil,
   CalendarClock,
   Sparkles,
+  Layers,
 } from 'lucide-react';
 import { Logo } from '@/components/brand';
 import { UserMenu } from '@/components/app/user-menu';
@@ -234,15 +235,24 @@ export function Sidebar({
             Connect a number
           </Link>
         ) : (
-          inboxes.map((i) => (
-            <NavRow
-              key={i.id}
-              href={`/inbox?inbox=${i.id}`}
-              active={Boolean(onInbox && activeInbox === i.id)}
-              label={i.name}
-              dot={{ color: i.color, connected: i.connected }}
-            />
-          ))
+          <>
+            {/* The unified view: every number in one stream. Only earns a row
+                once there is more than one number to unify. Never marked
+                active — the Inbox row above already lights for the unified
+                view, and one `layoutId` pill cannot be in two places. */}
+            {inboxes.length > 1 && (
+              <NavRow href="/inbox" active={false} icon={Layers} label="All numbers" count={counts.open} />
+            )}
+            {inboxes.map((i) => (
+              <NavRow
+                key={i.id}
+                href={`/inbox?inbox=${i.id}`}
+                active={Boolean(onInbox && activeInbox === i.id)}
+                label={i.name}
+                dot={{ color: i.color, connected: i.connected }}
+              />
+            ))}
+          </>
         )}
 
         <SectionLabel>Workspace</SectionLabel>

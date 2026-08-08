@@ -391,6 +391,8 @@ export async function updateInboxSettings(
     markReadOnReply?: boolean;
     csatEnabled?: boolean;
     csatMessage?: string;
+    /** Fallback signature for replies from this number (see server/signature). */
+    signature?: string;
   },
 ): Promise<{ ok: boolean }> {
   await requireAdmin();

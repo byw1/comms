@@ -34,6 +34,9 @@ trustworthy. Both are mostly backend and shippable without new infra.
   - 🚧 Auto-triage on new conversations: priority, topic, sentiment, suggested tags
   - ⬜ Eval harness: golden conversations + automated scoring + regression gates
   - ⬜ Smart compose / inline autocomplete
+  - ✅ Bundles — AI groups similar active threads into named sections in the list
+  - ✅ Nudges — broken outbound promises ("I'll send it Friday") detected from
+    your own words and resurfaced when overdue
   - ⬜ Auto-resolve tier-1 with confidence threshold + human handoff
   - ⬜ Real-time translation (inbound + outbound)
   - ⬜ Voice-memo transcription + image understanding
@@ -51,7 +54,8 @@ What makes Comms enterprise rather than a personal bridge.
 - ✅ Real-time presence ("Sarah is viewing / typing…") + collision warnings
 - ✅ @mentions in internal notes with notifications (+ notification bell)
 - ✅ Assignment rules engine (round-robin + least-busy auto-assignment)
-- ⬜ Co-drafting a single reply (shared draft)
+- ✅ Shared drafts — write a reply, share it for review, a teammate approves &
+  sends it (with "drafted by" attribution)
 - ⬜ Skills-based / business-hours routing; escalation / handoff with context
 
 ## Wave 3 — Workflow & ticketing depth ✅ (core)
@@ -69,6 +73,13 @@ What makes Comms enterprise rather than a personal bridge.
 
 - ✅ Command palette (⌘K) + keyboard navigation (search + jump-to)
 - ✅ Full-text search across all messages, contacts, and conversation titles
+- ✅ Focus & Reply mode — one conversation full screen, progress counter, send/close advances the stack
+- ✅ Split-view details pane (Details / Files / Schedule tabs) with per-thread attachment & link gallery
+- ✅ Undo on every action (close, snooze, assign, priority, mute, bulk, bundles) with one consistent toast
+- ✅ Mute — permanently silence a thread (group chats) without archiving it
+- ✅ Signatures — personal + per-inbox, with a workspace-level switch
+- ✅ Instant Intro — region, local time, history and self-introduction extraction for unknown numbers
+- ✅ Offer times — business-hours availability inserted into a reply as text
 - ⬜ Semantic search (pgvector embeddings, kept fresh by the worker)
 - ⬜ Linear-style local sync engine (IndexedDB store + optimistic mutations + delta sync)
 - ⬜ Native mobile app (reply on the go)

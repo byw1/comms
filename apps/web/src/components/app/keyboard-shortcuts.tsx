@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { updateConversation } from '@/server/actions/inbox';
 import { siblingConversationId } from '@/lib/inbox-nav';
+import { undoToast } from '@/lib/undo';
 import { useKeymap } from '@/components/app/keymap-provider';
 import { useGlobalShortcuts } from '@/lib/use-global-shortcuts';
 import {
@@ -41,6 +42,10 @@ export function KeyboardShortcuts() {
     ? (pathname.split('/inbox/')[1]?.split('/')[0] ?? null)
     : null;
 
+  // Focus mode owns the keyboard with its own handlers; two listeners firing
+  // on the same `j` would advance twice.
+  const inFocusMode = pathname.startsWith('/focus');
+
   const go = (direction: 1 | -1) => {
     const next = siblingConversationId(activeId, direction);
     if (next && next !== activeId) router.push(`/inbox/${next}`);
@@ -51,7 +56,16 @@ export function KeyboardShortcuts() {
     if (activeId) fn();
   };
 
-  useGlobalShortcuts({
+  useGlobalShortcuts(
+    inFocusMode
+      ? // Everything conversation- and navigation-shaped stands down in focus
+        // mode; the palette, compose and help stay reachable.
+        {
+          'compose.new': () => window.dispatchEvent(new Event('comms:new-conversation')),
+          'app.search': () => window.dispatchEvent(new Event('comms:open-palette')),
+          'app.help': () => setHelpOpen((o) => !o),
+        }
+      : {
     'nav.next': () => go(1),
     'nav.prev': () => go(-1),
     'nav.back': () => {
@@ -60,11 +74,15 @@ export function KeyboardShortcuts() {
 
     'conversation.close': onOpen(() => {
       // Close, then advance to the next conversation — the game loop.
+      const id = activeId!;
       const next = siblingConversationId(activeId, 1) ?? siblingConversationId(activeId, -1);
-      void updateConversation({ id: activeId!, status: 'closed' }).then((res) => {
+      void updateConversation({ id, status: 'closed' }).then((res) => {
         if (!res.ok) toast.error(res.error);
+        else
+          undoToast('Closed', () => updateConversation({ id, status: 'open' }), {
+            onUndone: () => router.refresh(),
+          });
       });
-      toast.success('Closed', { duration: 1500 });
       router.push(next ? `/inbox/${next}` : '/inbox');
     }),
     'conversation.snooze': onOpen(() => window.dispatchEvent(new Event('comms:snooze-open'))),

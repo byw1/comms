@@ -3,7 +3,20 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Search, Check, Loader2, Inbox as InboxIcon, X, Pencil, Eye } from 'lucide-react';
+import {
+  Search,
+  Check,
+  Loader2,
+  Inbox as InboxIcon,
+  X,
+  Pencil,
+  Eye,
+  BellOff,
+  AlarmClockCheck,
+  Boxes,
+  ChevronDown,
+  Crosshair,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -11,6 +24,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { AnimatePresence, motion } from '@/components/ui/motion';
 import { bulkUpdateConversations } from '@/server/actions/inbox';
+import { dissolveBundle, restoreBundle } from '@/server/actions/bundles';
+import { undoToast } from '@/lib/undo';
 import { FilterBar } from '@/components/inbox/filter-bar';
 import { setVisibleConversationIds } from '@/lib/inbox-nav';
 import { conversationName, nameForInitials } from '@/lib/naming';
@@ -68,11 +83,31 @@ export function ConversationListPane({
 
   function bulk(patch: { status?: 'open' | 'pending' | 'closed' }) {
     const ids = Array.from(selected);
+    // Capture what each row was BEFORE the change, so Undo can put every
+    // conversation back to its own previous status, not a blanket one.
+    const prevStatuses = new Map(
+      conversations.filter((c) => selected.has(c.id)).map((c) => [c.id, c.status]),
+    );
     startBulk(async () => {
       const res = await bulkUpdateConversations(ids, patch);
       if (!res.ok) toast.error(res.error);
       else {
-        toast.success(`Updated ${ids.length} conversation${ids.length === 1 ? '' : 's'}`);
+        undoToast(`Updated ${ids.length} conversation${ids.length === 1 ? '' : 's'}`, async () => {
+          const byStatus = new Map<string, string[]>();
+          for (const [id, status] of prevStatuses) {
+            // Bulk updates can't produce 'snoozed'; a formerly-snoozed row
+            // reopens instead, which is also what unsnoozing would do.
+            const restorable = status === 'open' || status === 'pending' || status === 'closed' ? status : 'open';
+            byStatus.set(restorable, [...(byStatus.get(restorable) ?? []), id]);
+          }
+          for (const [status, group] of byStatus) {
+            const r = await bulkUpdateConversations(group, {
+              status: status as 'open' | 'pending' | 'closed',
+            });
+            if (!r.ok) return r;
+          }
+          return { ok: true as const };
+        }, { onUndone: () => router.refresh() });
         setSelected(new Set());
         router.refresh();
       }
@@ -172,6 +207,58 @@ export function ConversationListPane({
     sort,
   ]);
 
+  // ---- Bundles: AI-grouped sections in the inbox ---------------------------
+  // Grouping is a display choice, so it persists like one. Sections only
+  // exist in the Inbox tab — a bundle header inside "Closed" answers nothing.
+  const [grouping, setGrouping] = useState(true);
+  const [collapsedBundles, setCollapsedBundles] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setGrouping(window.localStorage.getItem('comms:bundle-group') !== '0');
+  }, []);
+
+  const canGroup = statusFilter === 'active' && !query;
+  const bundleGroups = useMemo(() => {
+    if (!canGroup || !grouping) return [];
+    const groups = new Map<string, { id: string; name: string; rows: typeof filtered }>();
+    for (const c of filtered) {
+      if (!c.bundle) continue;
+      const g = groups.get(c.bundle.id) ?? { id: c.bundle.id, name: c.bundle.name, rows: [] };
+      g.rows.push(c);
+      groups.set(c.bundle.id, g);
+    }
+    // A "group" of one is just a row with extra chrome.
+    return Array.from(groups.values()).filter((g) => g.rows.length >= 2);
+  }, [filtered, canGroup, grouping]);
+
+  const bundledIds = useMemo(
+    () => new Set(bundleGroups.flatMap((g) => g.rows.map((r) => r.id))),
+    [bundleGroups],
+  );
+  const ungrouped = useMemo(
+    () => (bundleGroups.length ? filtered.filter((c) => !bundledIds.has(c.id)) : filtered),
+    [filtered, bundleGroups, bundledIds],
+  );
+
+  function toggleGrouping() {
+    setGrouping((g) => {
+      window.localStorage.setItem('comms:bundle-group', g ? '0' : '1');
+      return !g;
+    });
+  }
+
+  function dissolve(bundleId: string, name: string) {
+    void dissolveBundle(bundleId).then((res) => {
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      undoToast(`Dissolved “${name}” — it won't be recreated`, () =>
+        restoreBundle(res.name, res.conversationIds),
+      { onUndone: () => router.refresh() });
+      router.refresh();
+    });
+  }
+
   /** Toggle a tag in the URL filter — used by the clickable tag chips. */
   function toggleTagFilter(tagId: string) {
     const current = (searchParams.get('tags') ?? '').split(',').filter(Boolean);
@@ -186,12 +273,35 @@ export function ConversationListPane({
   }
 
   // Publish the visible ordering for the global j/k keyboard navigation.
+  // Mirrors the DISPLAY order — bundle sections first, then the rest — and
+  // skips rows folded inside a collapsed bundle, so j/k never jumps somewhere
+  // invisible.
   useEffect(() => {
-    setVisibleConversationIds(filtered.map((c) => c.id));
-  }, [filtered]);
+    const order = bundleGroups.length
+      ? [
+          ...bundleGroups.flatMap((g) => (collapsedBundles.has(g.id) ? [] : g.rows.map((r) => r.id))),
+          ...ungrouped.map((c) => c.id),
+        ]
+      : filtered.map((c) => c.id);
+    setVisibleConversationIds(order);
+  }, [filtered, bundleGroups, ungrouped, collapsedBundles]);
 
   /** Selection mode: once anything is picked, every row offers its checkbox. */
   const selecting = selected.size > 0;
+
+  /** Display sections: bundle groups first, then everything else. */
+  const sections = useMemo(() => {
+    if (bundleGroups.length === 0) {
+      return [{ key: 'all', bundle: null as { id: string; name: string } | null, rows: filtered }];
+    }
+    const list = bundleGroups.map((g) => ({
+      key: g.id,
+      bundle: { id: g.id, name: g.name } as { id: string; name: string } | null,
+      rows: g.rows,
+    }));
+    if (ungrouped.length) list.push({ key: 'rest', bundle: null, rows: ungrouped });
+    return list;
+  }, [bundleGroups, ungrouped, filtered]);
 
   // Drafts earns a tab only when you have one. An always-present empty folder
   // is chrome; one that appears because you left something unsent is a prompt.
@@ -244,7 +354,8 @@ export function ConversationListPane({
         </div>
 
         {/* Sliding segmented control — quick presets over the filter bar. */}
-        <div className="flex items-center gap-0.5 rounded-xl bg-secondary/60 p-[3px]">
+        <div className="flex items-center gap-1">
+        <div className="flex flex-1 items-center gap-0.5 rounded-xl bg-secondary/60 p-[3px]">
           {tabs.map((t) => {
             const isActive =
               (t.key === 'active' && !assignee && statusFilter === 'active') ||
@@ -272,6 +383,34 @@ export function ConversationListPane({
               </Link>
             );
           })}
+        </div>
+
+        {/* Focus & Reply: work this exact queue one screen at a time. */}
+        <Link
+          href={`/focus?queue=${assignee === 'me' ? 'mine' : statusFilter === 'drafts' ? 'drafts' : 'inbox'}`}
+          title="Focus & Reply — work the stack one conversation at a time"
+          aria-label="Focus and reply"
+          className="rounded-lg p-1.5 text-muted-foreground transition-all duration-150 hover:bg-accent hover:text-foreground active:scale-95"
+        >
+          <Crosshair className="h-[15px] w-[15px]" />
+        </Link>
+        {canGroup && (
+          <button
+            type="button"
+            onClick={toggleGrouping}
+            title={grouping ? 'Show as a flat list' : 'Group similar conversations'}
+            aria-label="Toggle bundle grouping"
+            aria-pressed={grouping}
+            className={cn(
+              'rounded-lg p-1.5 transition-all duration-150 hover:bg-accent active:scale-95',
+              grouping && bundleGroups.length > 0
+                ? 'text-brand'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <Boxes className="h-[15px] w-[15px]" />
+          </button>
+        )}
         </div>
       </div>
 
@@ -364,7 +503,55 @@ export function ConversationListPane({
           </div>
         ) : (
           <div className="space-y-px">
-            {filtered.map((c) => {
+            {sections.map((sec) => (
+              <div key={sec.key}>
+                {sec.bundle && (
+                  <div className="group/bundle flex items-center gap-1.5 px-2 pb-0.5 pt-3 first:pt-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCollapsedBundles((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(sec.bundle!.id)) next.delete(sec.bundle!.id);
+                          else next.add(sec.bundle!.id);
+                          return next;
+                        })
+                      }
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                      aria-expanded={!collapsedBundles.has(sec.bundle.id)}
+                    >
+                      <ChevronDown
+                        className={cn(
+                          'h-3 w-3 shrink-0 text-muted-foreground/60 transition-transform duration-150',
+                          collapsedBundles.has(sec.bundle.id) && '-rotate-90',
+                        )}
+                      />
+                      <Boxes className="h-3 w-3 shrink-0 text-brand" />
+                      <span className="type-micro truncate text-muted-foreground">
+                        {sec.bundle.name}
+                      </span>
+                      <span className="tabular type-caption shrink-0 text-muted-foreground/60">
+                        {sec.rows.length}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => dissolve(sec.bundle!.id, sec.bundle!.name)}
+                      title="Dissolve this bundle"
+                      aria-label={`Dissolve bundle ${sec.bundle.name}`}
+                      className="rounded p-0.5 text-muted-foreground/50 opacity-0 transition-all hover:text-foreground group-hover/bundle:opacity-100"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+                {!sec.bundle && sec.key === 'rest' && (
+                  <p className="type-micro px-2 pb-0.5 pt-3 text-muted-foreground/60">
+                    Everything else
+                  </p>
+                )}
+                {(!sec.bundle || !collapsedBundles.has(sec.bundle.id)) &&
+                  sec.rows.map((c) => {
               const active = c.id === activeId;
               const isSelected = selected.has(c.id);
               const nameInput = {
@@ -377,8 +564,12 @@ export function ConversationListPane({
               };
               const name = conversationName(nameInput);
               const unread = c.unreadCount > 0;
+              const nudgeMeta = (c.metadata as { nudge?: { dismissedAt?: string } } | null)?.nudge;
+              const hasNudge = Boolean(nudgeMeta && !nudgeMeta.dismissedAt);
+              const muted = Boolean(c.mutedAt);
               const hasMeta =
                 unread ||
+                hasNudge ||
                 c.readNoReply ||
                 Boolean(c.slaBreachedAt) ||
                 Boolean(c.nextResponseDueAt && c.status !== 'closed') ||
@@ -453,7 +644,13 @@ export function ConversationListPane({
                       >
                         {name}
                       </p>
-                      <span className="tabular type-caption shrink-0 text-muted-foreground/80">
+                      <span className="tabular type-caption flex shrink-0 items-center gap-1 text-muted-foreground/80">
+                        {muted && (
+                          <BellOff
+                            className="h-3 w-3 text-muted-foreground/60"
+                            aria-label="Muted"
+                          />
+                        )}
                         {listTime(c.lastMessageAt)}
                       </span>
                     </div>
@@ -493,6 +690,14 @@ export function ConversationListPane({
                           <Badge variant="outline" size="sm" className="gap-1">
                             <Eye className="h-3 w-3" />
                             Seen
+                          </Badge>
+                        )}
+                        {/* A promise you made and haven't kept outranks most
+                            other row facts — it's the one only you can fix. */}
+                        {hasNudge && (
+                          <Badge variant="soft-warning" size="sm" className="gap-1">
+                            <AlarmClockCheck className="h-3 w-3" />
+                            Nudge
                           </Badge>
                         )}
                         {c.slaBreachedAt ? (
@@ -559,7 +764,9 @@ export function ConversationListPane({
                   </div>
                 </Link>
               );
-            })}
+                  })}
+              </div>
+            ))}
           </div>
         )}
       </div>

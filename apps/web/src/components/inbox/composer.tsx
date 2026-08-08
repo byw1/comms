@@ -11,6 +11,8 @@ import {
   CornerUpLeft,
   X,
   Users,
+  Share2,
+  PenLine,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -33,11 +35,14 @@ import {
 import { applyMacro } from '@/server/actions/macros';
 import { completeMessageAction } from '@/server/actions/ai';
 import { sendTypingIndicator } from '@/server/actions/imessage';
-import { clearDraft, saveDraft } from '@/server/actions/drafts';
+import { clearDraft, saveDraft, shareMyDraft, unshareDraft } from '@/server/actions/drafts';
 import { SEND_LATER_PRESETS } from '@/lib/snooze';
 import { CustomTimePicker } from '@/components/inbox/time-picker';
+import { OfferTimes } from '@/components/inbox/offer-times';
+import type { BusinessHours } from '@/lib/availability';
 import { cn } from '@/lib/utils';
 import { useKeymap } from '@/components/app/keymap-provider';
+import { useCurrentUser } from '@/components/app/realtime-provider';
 import { firstNames, useTypingPeers } from '@/lib/use-peers';
 
 export function Composer({
@@ -49,6 +54,9 @@ export function Composer({
   replyTo,
   onCancelReply,
   onSubmit,
+  businessHours,
+  signaturePreview,
+  viaInbox,
 }: {
   conversationId: string;
   macros: MacroOption[];
@@ -56,7 +64,7 @@ export function Composer({
   /** Pre-computed suggestion shown as ghost text; Tab accepts it. */
   aiDraft?: string | null;
   /** The caller's unsent draft for this conversation, restored on mount. */
-  initialDraft?: { body: string; isPrivateNote: boolean } | null;
+  initialDraft?: { body: string; isPrivateNote: boolean; shared?: boolean } | null;
   /** The message this reply is threaded to, if any. */
   replyTo?: { id: string; body: string | null; guid: string | null } | null;
   onCancelReply?: () => void;
@@ -65,8 +73,15 @@ export function Composer({
    * Returns false on failure so the composer can restore the draft.
    */
   onSubmit: (body: string, isNote: boolean, scheduledFor?: Date) => Promise<boolean>;
+  /** Workspace business hours — enables the "Offer times" picker. */
+  businessHours?: BusinessHours | null;
+  /** The signature that will be appended at send time, when one applies. */
+  signaturePreview?: string | null;
+  /** Which number this reply goes out from — shown when several are connected. */
+  viaInbox?: { name: string; color: string } | null;
 }) {
   const { enterSends } = useKeymap();
+  const me = useCurrentUser();
   // Read at the composer, not just in the header strip: a warning you have
   // stopped noticing is not a warning, and the cost of a duplicate reply to a
   // customer is paid by them, not by us.
@@ -84,11 +99,30 @@ export function Composer({
   const ghostRef = useRef<HTMLDivElement>(null);
   const picker = useMacroPickerState(macros, body);
 
+  // Shared-draft state for the caller's own draft. Editing a shared draft
+  // keeps it shared — the row updates live for whoever is reviewing it.
+  const [shared, setShared] = useState(Boolean(initialDraft?.shared));
+  const [sharePending, startShare] = useTransition();
+
   // The global `r` shortcut focuses the composer from anywhere in the thread.
   useEffect(() => {
     const focus = () => ref.current?.focus();
     window.addEventListener('comms:focus-composer', focus);
     return () => window.removeEventListener('comms:focus-composer', focus);
+  }, []);
+
+  // "Edit in composer" on a teammate's shared draft loads its text here.
+  useEffect(() => {
+    const load = (e: Event) => {
+      const text = (e as CustomEvent<{ body?: string }>).detail?.body;
+      if (!text) return;
+      // Never destroy what's already typed — append below it instead.
+      setBody((b) => (b.trim() ? `${b.trimEnd()}\n${text}` : text));
+      setIsNote(false);
+      ref.current?.focus();
+    };
+    window.addEventListener('comms:load-draft', load);
+    return () => window.removeEventListener('comms:load-draft', load);
   }, []);
 
   // Broadcast a throttled "typing" presence ping so other agents see collisions,
@@ -129,6 +163,7 @@ export function Composer({
     loadedFor.current = conversationId;
     setBody(initialDraft?.body ?? '');
     setIsNote(initialDraft?.isPrivateNote ?? false);
+    setShared(Boolean(initialDraft?.shared));
   }, [conversationId, initialDraft]);
 
   /**
@@ -245,6 +280,38 @@ export function Composer({
         // when the draft matters.
         setBody(trimmed);
         void saveDraft({ conversationId, body: trimmed, isPrivateNote: isNote }).catch(() => {});
+      }
+    });
+  }
+
+  /**
+   * Share (or unshare) the current draft with the team. The draft is flushed
+   * to the server first so what teammates review is what's on the screen.
+   */
+  function toggleShare() {
+    const trimmed = body.trim();
+    if (!trimmed && !shared) return;
+    startShare(async () => {
+      if (shared) {
+        if (!me?.id) return;
+        // The composer only ever unshares its own draft.
+        const res = await unshareDraft(conversationId, me.id).catch(() => ({ ok: false as const, error: 'Failed' }));
+        if (res.ok) {
+          setShared(false);
+          toast.success('Draft is private again');
+        } else {
+          toast.error(res.error ?? 'Could not unshare');
+        }
+        return;
+      }
+      await saveDraft({ conversationId, body, isPrivateNote: false });
+      savedBody.current = body;
+      const res = await shareMyDraft(conversationId);
+      if (res.ok) {
+        setShared(true);
+        toast.success('Draft shared — anyone on the team can review and send it');
+      } else {
+        toast.error(res.error ?? 'Could not share the draft');
       }
     });
   }
@@ -443,6 +510,29 @@ export function Composer({
           </div>
 
           <div className="flex items-center gap-0.5">
+            {/* Share draft: hand what you've written to the team for review. */}
+            {!isNote && (body.trim() || shared) && (
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={toggleShare}
+                disabled={sharePending}
+                className={cn('gap-1.5', shared && 'text-brand')}
+                title={shared ? 'Shared with the team — click to unshare' : 'Share draft for review'}
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                {shared ? 'Shared' : 'Share'}
+              </Button>
+            )}
+            {businessHours && !isNote && (
+              <OfferTimes
+                hours={businessHours}
+                onInsert={(text) => {
+                  setBody((b) => (b.trim() ? `${b.trimEnd()}\n${text}` : text));
+                  ref.current?.focus();
+                }}
+              />
+            )}
             {aiEnabled && <AiAssist conversationId={conversationId} onDraft={setBody} />}
             {macros.length > 0 && (
               <Popover>
@@ -592,6 +682,30 @@ export function Composer({
 
       {/* The hint has to follow the setting, or it teaches the wrong key. */}
       <p className="hidden items-center gap-1 px-1.5 pt-1.5 text-[10.5px] text-muted-foreground md:flex">
+        {viaInbox && (
+          <>
+            <span className="flex items-center gap-1" title={`Replies go out from ${viaInbox.name}`}>
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: viaInbox.color }}
+              />
+              via {viaInbox.name}
+            </span>
+            <span className="opacity-40">·</span>
+          </>
+        )}
+        {signaturePreview && !isNote && (
+          <>
+            <span
+              className="flex items-center gap-1"
+              title={`Appended when you send:\n\n${signaturePreview}`}
+            >
+              <PenLine className="h-2.5 w-2.5" />
+              signature on
+            </span>
+            <span className="opacity-40">·</span>
+          </>
+        )}
         {completion && (
           <>
             <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">⇥</kbd>

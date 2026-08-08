@@ -4,6 +4,7 @@ import {
   COMMS_WEBHOOK_EVENTS,
   COMMS_WEBHOOK_VERSION,
   describeConnectionError,
+  detectCommitment,
   enqueueMaintenance,
   outboundQueue,
   loadConfig,
@@ -12,7 +13,7 @@ import {
 } from '@comms/core';
 import { repairBlankNames, syncContacts } from '../lib/contacts.js';
 import { backfillParticipants, repairContactlessConversations } from '../lib/participants.js';
-import { getDb, eq, and, lte, inArray, isNotNull } from '@comms/db';
+import { getDb, eq, and, lte, inArray, isNotNull, sql } from '@comms/db';
 import {
   channelConnections,
   conversations,
@@ -246,6 +247,112 @@ async function followUps() {
   }
 }
 
+/**
+ * Nudges: promises we made and then went quiet on.
+ *
+ * Scans each conversation's LAST outbound agent reply (a later reply means
+ * the earlier promise was superseded), runs the commitment detector over it,
+ * and once the promised time has passed with no further reply from us, pins
+ * a nudge on the conversation and tells the person who made the promise.
+ *
+ * Unlike a follow-up reminder, nobody set anything: the sentence itself was
+ * the reminder. Dismissals are remembered per message, so the same promise
+ * never nags twice.
+ */
+const NUDGE_WINDOW_DAYS = 14;
+/** How long an undated promise ("I'll send that over") gets before a nudge. */
+const NUDGE_DEFAULT_GRACE_MS = 3 * 24 * 3600_000;
+
+async function nudgeSweep() {
+  const db = getDb();
+
+  // Last agent reply per conversation within the window, only where nothing
+  // outbound followed it — SQL keeps the candidate set tiny before the
+  // commitment detector (regex, per-row) runs in Node.
+  const candidates = await db
+    .select({
+      messageId: messages.id,
+      conversationId: messages.conversationId,
+      body: messages.body,
+      authorUserId: messages.authorUserId,
+      sentAt: messages.sentAt,
+      createdAt: messages.createdAt,
+    })
+    .from(messages)
+    .innerJoin(conversations, eq(conversations.id, messages.conversationId))
+    .where(
+      and(
+        eq(messages.direction, 'outbound'),
+        eq(messages.authorType, 'agent'),
+        eq(messages.isPrivateNote, false),
+        isNotNull(messages.body),
+        sql`${messages.createdAt} > now() - interval '${sql.raw(String(NUDGE_WINDOW_DAYS))} days'`,
+        sql`${conversations.status} <> 'closed'`,
+        sql`not exists (
+          select 1 from ${messages} m2
+          where m2.conversation_id = ${messages.conversationId}
+            and m2.direction = 'outbound'
+            and m2.author_type = 'agent'
+            and m2.is_private_note = false
+            and m2.created_at > ${messages.createdAt}
+        )`,
+      ),
+    )
+    .limit(500);
+
+  const now = Date.now();
+  for (const c of candidates) {
+    const madeAt = c.sentAt ?? c.createdAt;
+    const commitment = detectCommitment(c.body, madeAt);
+    if (!commitment) continue;
+
+    const dueAt = commitment.dueAt ?? new Date(madeAt.getTime() + NUDGE_DEFAULT_GRACE_MS);
+    if (dueAt.getTime() > now) continue;
+
+    const conv = await db.query.conversations.findFirst({
+      where: eq(conversations.id, c.conversationId),
+      columns: { id: true, inboxId: true, number: true, metadata: true },
+    });
+    if (!conv) continue;
+
+    const meta = (conv.metadata ?? {}) as Record<string, unknown>;
+    const existing = meta.nudge as { messageId?: string } | undefined;
+    // Already nudged (or dismissed) for this exact promise — stay quiet.
+    if (existing?.messageId === c.messageId) continue;
+
+    await db
+      .update(conversations)
+      .set({
+        metadata: {
+          ...meta,
+          nudge: {
+            messageId: c.messageId,
+            excerpt: commitment.excerpt,
+            dueAt: dueAt.toISOString(),
+            firedAt: new Date().toISOString(),
+          },
+        },
+      })
+      .where(eq(conversations.id, conv.id));
+
+    if (c.authorUserId) {
+      await db.insert(notifications).values({
+        userId: c.authorUserId,
+        type: 'system',
+        conversationId: conv.id,
+        body: `You said “${commitment.excerpt.slice(0, 80)}” on #${conv.number} — still unsent`,
+      });
+      await publishEvent({ type: 'notification', userId: c.authorUserId });
+    }
+    await publishEvent({
+      type: 'conversation.updated',
+      conversationId: conv.id,
+      inboxId: conv.inboxId,
+    });
+    log.info({ conversationId: conv.id, messageId: c.messageId }, 'nudge fired');
+  }
+}
+
 async function unsnooze() {
   const db = getDb();
   const due = await db
@@ -350,5 +457,7 @@ export async function processMaintenance(job: Job<MaintenanceJob>): Promise<void
       await repairContactlessConversations();
       await backfillParticipants();
       return;
+    case 'nudges':
+      return nudgeSweep();
   }
 }
