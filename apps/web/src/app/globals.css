@@ -196,6 +196,58 @@
 }
 
 @layer components {
+  /*
+   * TYPE SCALE — five steps, one job each.
+   *
+   * The interface previously used 10.5, 11, 11.5, 12, 13, 13.5 and 15px chosen
+   * per component, which is why nothing looked deliberate: with seven sizes
+   * that are all nearly the same, hierarchy stops reading as hierarchy and
+   * starts reading as noise.
+   *
+   * Tracking is corrected at every step rather than left at Inter's default.
+   * Inter runs loose above 14px and tight below 12px, and that single
+   * correction is most of the difference between "a web app" and "designed".
+   */
+  .type-title {
+    font-size: 0.9375rem; /* 15px — names, section headings */
+    line-height: 1.3;
+    letter-spacing: -0.015em;
+    font-weight: 600;
+  }
+  .type-item {
+    font-size: 0.84375rem; /* 13.5px — nav rows, controls */
+    line-height: 1.35;
+    letter-spacing: -0.008em;
+    font-weight: 500;
+  }
+  .type-body {
+    font-size: 0.8125rem; /* 13px — message text, previews */
+    line-height: 1.55;
+    letter-spacing: -0.003em;
+  }
+  .type-caption {
+    font-size: 0.71875rem; /* 11.5px — timestamps, chips */
+    line-height: 1.35;
+    letter-spacing: 0;
+  }
+  .type-micro {
+    font-size: 0.65625rem; /* 10.5px — section labels */
+    line-height: 1.25;
+    letter-spacing: 0.065em;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  /*
+   * One horizontal inset for everything in a pane, so the search field, the
+   * tabs, the section labels and the rows all start on the same vertical line.
+   * Misaligned insets read as sloppiness even when nobody can say why.
+   */
+  .pane-x {
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
+
   /* Hairline that fades at both ends — softer than a full-bleed 1px border. */
   .divider-fade {
     background: linear-gradient(

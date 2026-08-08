@@ -131,7 +131,7 @@ function AttachmentView({ att, onBubble }: { att: Attachment; onBubble: boolean 
         {att.transcript && (
           <p
             className={cn(
-              'flex gap-1.5 text-[12.5px] italic leading-relaxed',
+              'type-body flex gap-1.5 italic',
               onBubble ? 'opacity-90' : 'text-muted-foreground',
             )}
           >
@@ -181,7 +181,7 @@ function AttachmentView({ att, onBubble }: { att: Attachment; onBubble: boolean 
 function TimelineNote({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex justify-center py-1">
-      <span className="rounded-full bg-secondary/70 px-2.5 py-1 text-[11px] text-muted-foreground">
+      <span className="type-caption rounded-full bg-secondary/70 px-2.5 py-1 text-muted-foreground">
         {children}
       </span>
     </div>
@@ -213,161 +213,163 @@ export function MessageThread({
   let lastDay = '';
 
   return (
-    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4 md:px-5 md:py-6">
-      {messages.map((m, i) => {
-        const stamp = m.sentAt ?? m.createdAt;
-        const day = dayLabel(stamp);
-        const showDay = day !== lastDay;
-        if (showDay) lastDay = day;
+    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-5 md:py-6">
+      <div className="mx-auto w-full max-w-[680px] space-y-1">
+        {messages.map((m, i) => {
+          const stamp = m.sentAt ?? m.createdAt;
+          const day = dayLabel(stamp);
+          const showDay = day !== lastDay;
+          if (showDay) lastDay = day;
 
-        const dayDivider = showDay ? (
-          <div key={`day-${m.id}`} className="flex items-center gap-3 py-4">
-            <div className="divider-fade h-px flex-1" />
-            <span className="text-[11px] font-medium text-muted-foreground">{day}</span>
-            <div className="divider-fade h-px flex-1" />
-          </div>
-        ) : null;
+          const dayDivider = showDay ? (
+            <div key={`day-${m.id}`} className="flex items-center gap-3 py-4">
+              <div className="divider-fade h-px flex-1" />
+              <span className="type-caption font-medium text-muted-foreground">{day}</span>
+              <div className="divider-fade h-px flex-1" />
+            </div>
+          ) : null;
 
-        if (m.authorType === 'system') {
+          if (m.authorType === 'system') {
+            return (
+              <div key={m.id}>
+                {dayDivider}
+                <TimelineNote>{m.body}</TimelineNote>
+              </div>
+            );
+          }
+
+          if (m.reactionType) {
+            const base = m.reactionType.replace('-', '');
+            const removed = m.reactionType.startsWith('-');
+            return (
+              <div key={m.id}>
+                {dayDivider}
+                <TimelineNote>
+                  {/* `||`, not `??` — an unnamed handle arrives as '' and would
+                      render this line starting with a space. */}
+                  {m.authorName || (m.direction === 'inbound' ? 'Contact' : 'You')}{' '}
+                  {removed ? 'removed a' : 'reacted'} {REACTION_EMOJI[base] ?? '👍'}
+                </TimelineNote>
+              </div>
+            );
+          }
+
+          const isOutbound = m.direction === 'outbound';
+          const isNote = m.isPrivateNote;
+
+          // Consecutive messages from the same side group together: tighter spacing
+          // and a squared-off corner on the joining edge, like iMessage.
+          const prev = messages[i - 1];
+          const next = messages[i + 1];
+          const sameAsPrev =
+            !showDay &&
+            prev &&
+            !prev.reactionType &&
+            prev.authorType !== 'system' &&
+            prev.direction === m.direction &&
+            prev.isPrivateNote === m.isPrivateNote;
+          const sameAsNext =
+            next &&
+            !next.reactionType &&
+            next.authorType !== 'system' &&
+            next.direction === m.direction &&
+            next.isPrivateNote === m.isPrivateNote;
+
           return (
             <div key={m.id}>
               {dayDivider}
-              <TimelineNote>{m.body}</TimelineNote>
-            </div>
-          );
-        }
-
-        if (m.reactionType) {
-          const base = m.reactionType.replace('-', '');
-          const removed = m.reactionType.startsWith('-');
-          return (
-            <div key={m.id}>
-              {dayDivider}
-              <TimelineNote>
-                {/* `||`, not `??` — an unnamed handle arrives as '' and would
-                    render this line starting with a space. */}
-                {m.authorName || (m.direction === 'inbound' ? 'Contact' : 'You')}{' '}
-                {removed ? 'removed a' : 'reacted'} {REACTION_EMOJI[base] ?? '👍'}
-              </TimelineNote>
-            </div>
-          );
-        }
-
-        const isOutbound = m.direction === 'outbound';
-        const isNote = m.isPrivateNote;
-
-        // Consecutive messages from the same side group together: tighter spacing
-        // and a squared-off corner on the joining edge, like iMessage.
-        const prev = messages[i - 1];
-        const next = messages[i + 1];
-        const sameAsPrev =
-          !showDay &&
-          prev &&
-          !prev.reactionType &&
-          prev.authorType !== 'system' &&
-          prev.direction === m.direction &&
-          prev.isPrivateNote === m.isPrivateNote;
-        const sameAsNext =
-          next &&
-          !next.reactionType &&
-          next.authorType !== 'system' &&
-          next.direction === m.direction &&
-          next.isPrivateNote === m.isPrivateNote;
-
-        return (
-          <div key={m.id}>
-            {dayDivider}
-            <div
-              className={cn(
-                'group/msg flex animate-bubble-in flex-col',
-                isOutbound ? 'items-end' : 'items-start',
-                sameAsPrev ? 'mt-0.5' : 'mt-3',
-              )}
-            >
-              {isOutbound && m.authorName && !isNote && !sameAsPrev && (
-                <span className="mb-1 px-1 text-[11px] font-medium text-muted-foreground">
-                  {m.authorName}
-                </span>
-              )}
-
               <div
                 className={cn(
-                  'flex max-w-full items-center gap-1',
-                  isOutbound ? 'flex-row' : 'flex-row-reverse',
+                  'group/msg flex animate-bubble-in flex-col',
+                  isOutbound ? 'items-end' : 'items-start',
+                  sameAsPrev ? 'mt-0.5' : 'mt-3',
                 )}
               >
-                {onReplyTo && !isNote && (
-                  <MessageActions
-                    conversationId={conversationId}
-                    messageId={m.id}
-                    canReact={canReact && Boolean(m.providerMessageGuid)}
-                    side={isOutbound ? 'right' : 'left'}
-                    onReply={() =>
-                      onReplyTo({
-                        id: m.id,
-                        body: m.body,
-                        guid: m.providerMessageGuid ?? null,
-                      })
-                    }
-                  />
+                {isOutbound && m.authorName && !isNote && !sameAsPrev && (
+                  <span className="type-caption mb-1 px-1 font-medium text-muted-foreground">
+                    {m.authorName}
+                  </span>
                 )}
-                <div
-                className={cn(
-                  'max-w-[74%] space-y-2 px-3.5 py-2 text-[13.5px] leading-relaxed shadow-xs',
-                  // Rounded 18px everywhere, squared on the grouped edge.
-                  'rounded-[1.15rem]',
-                  isOutbound
-                    ? sameAsPrev && sameAsNext
-                      ? 'rounded-br-md rounded-tr-md'
-                      : sameAsPrev
-                        ? 'rounded-tr-md'
-                        : sameAsNext
-                          ? 'rounded-br-md'
-                          : ''
-                    : sameAsPrev && sameAsNext
-                      ? 'rounded-bl-md rounded-tl-md'
-                      : sameAsPrev
-                        ? 'rounded-tl-md'
-                        : sameAsNext
-                          ? 'rounded-bl-md'
-                          : '',
-                  isNote
-                    ? 'border border-warning/35 bg-warning-muted text-foreground'
-                    : isOutbound
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-secondary text-secondary-foreground',
-                )}
-              >
-                {isNote && (
-                  <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-warning">
-                    <Lock className="h-2.5 w-2.5" />
-                    Internal note
-                  </p>
-                )}
-                  {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
-                  {m.attachments.map((a) => (
-                    <AttachmentView key={a.id} att={a} onBubble={isOutbound && !isNote} />
-                  ))}
-                </div>
-              </div>
 
-              {/* Timestamp only on the last message of a group — cuts visual noise a lot. */}
-              {!sameAsNext && (
                 <div
                   className={cn(
-                    'mt-1 flex items-center gap-1 px-1 text-[10.5px] text-muted-foreground',
-                    isOutbound && 'flex-row-reverse',
+                    'flex max-w-full items-center gap-1',
+                    isOutbound ? 'flex-row' : 'flex-row-reverse',
                   )}
                 >
-                  <span className="tabular">{clockTime(stamp)}</span>
-                  {isOutbound && <StatusTick message={m} />}
+                  {onReplyTo && !isNote && (
+                    <MessageActions
+                      conversationId={conversationId}
+                      messageId={m.id}
+                      canReact={canReact && Boolean(m.providerMessageGuid)}
+                      side={isOutbound ? 'right' : 'left'}
+                      onReply={() =>
+                        onReplyTo({
+                          id: m.id,
+                          body: m.body,
+                          guid: m.providerMessageGuid ?? null,
+                        })
+                      }
+                    />
+                  )}
+                  <div
+                  className={cn(
+                    'type-body max-w-[min(78%,46ch)] space-y-2 px-3.5 py-2 shadow-xs',
+                    // Rounded 18px everywhere, squared on the grouped edge.
+                    'rounded-[1.15rem]',
+                    isOutbound
+                      ? sameAsPrev && sameAsNext
+                        ? 'rounded-br-md rounded-tr-md'
+                        : sameAsPrev
+                          ? 'rounded-tr-md'
+                          : sameAsNext
+                            ? 'rounded-br-md'
+                            : ''
+                      : sameAsPrev && sameAsNext
+                        ? 'rounded-bl-md rounded-tl-md'
+                        : sameAsPrev
+                          ? 'rounded-tl-md'
+                          : sameAsNext
+                            ? 'rounded-bl-md'
+                            : '',
+                    isNote
+                      ? 'border border-warning/35 bg-warning-muted text-foreground'
+                      : isOutbound
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-secondary text-secondary-foreground',
+                  )}
+                >
+                  {isNote && (
+                    <p className="type-micro flex items-center gap-1 text-warning">
+                      <Lock className="h-2.5 w-2.5" />
+                      Internal note
+                    </p>
+                  )}
+                    {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+                    {m.attachments.map((a) => (
+                      <AttachmentView key={a.id} att={a} onBubble={isOutbound && !isNote} />
+                    ))}
+                  </div>
                 </div>
-              )}
+
+                {/* Timestamp only on the last message of a group — cuts visual noise a lot. */}
+                {!sameAsNext && (
+                  <div
+                    className={cn(
+                      'type-caption mt-1 flex items-center gap-1 px-1 text-muted-foreground',
+                      isOutbound && 'flex-row-reverse',
+                    )}
+                  >
+                    <span className="tabular">{clockTime(stamp)}</span>
+                    {isOutbound && <StatusTick message={m} />}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        );
-      })}
-      <div ref={bottomRef} />
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
     </div>
   );
 }

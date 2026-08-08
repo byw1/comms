@@ -169,6 +169,9 @@ export function ConversationListPane({
     setVisibleConversationIds(filtered.map((c) => c.id));
   }, [filtered]);
 
+  /** Selection mode: once anything is picked, every row offers its checkbox. */
+  const selecting = selected.size > 0;
+
   const tabs = [
     { label: 'Inbox', href: '/inbox', key: 'active' },
     { label: 'Mine', href: '/inbox?assignee=me', key: 'mine' },
@@ -185,18 +188,18 @@ export function ConversationListPane({
     // once a conversation is open; md+ shows both panes side by side.
     <div
       className={cn(
-        'w-full shrink-0 flex-col border-r bg-surface md:flex md:w-[344px]',
+        'w-full shrink-0 flex-col border-r bg-surface md:flex md:w-[380px]',
         activeId ? 'hidden' : 'flex',
       )}
     >
-      <div className="space-y-2.5 px-3 pb-2.5 pt-3">
+      <div className="pane-x space-y-2.5 pb-3 pt-3">
         <div className="group relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-muted-foreground/70 transition-colors group-focus-within:text-brand" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search conversations"
-            className="h-9 pl-9 pr-8"
+            className="type-item h-10 rounded-xl pl-9 pr-8"
           />
           <AnimatePresence>
             {query && (
@@ -215,7 +218,7 @@ export function ConversationListPane({
         </div>
 
         {/* Sliding segmented control — quick presets over the filter bar. */}
-        <div className="flex items-center gap-0.5 rounded-lg bg-secondary/60 p-0.5">
+        <div className="flex items-center gap-0.5 rounded-xl bg-secondary/60 p-[3px]">
           {tabs.map((t) => {
             const isActive =
               (t.key === 'active' && !assignee && statusFilter === 'active') ||
@@ -227,14 +230,14 @@ export function ConversationListPane({
                 key={t.key}
                 href={t.href}
                 className={cn(
-                  'relative flex-1 rounded-[0.4rem] px-2.5 py-1 text-center text-[12px] font-medium transition-colors duration-150',
+                  'type-caption relative flex-1 rounded-lg px-2 py-1.5 text-center font-medium transition-colors duration-150',
                   isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
                 {isActive && (
                   <motion.span
                     layoutId="list-tab"
-                    className="absolute inset-0 rounded-[0.4rem] bg-surface shadow-xs"
+                    className="absolute inset-0 rounded-lg bg-surface shadow-xs"
                     transition={{ type: 'spring', stiffness: 500, damping: 38 }}
                   />
                 )}
@@ -285,14 +288,14 @@ export function ConversationListPane({
         )}
       </AnimatePresence>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="pane-x min-h-0 flex-1 overflow-y-auto pb-2">
         {inboxZero ? (
           <div className="flex animate-slide-up flex-col items-center justify-center gap-3.5 px-6 py-20 text-center">
             <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary text-primary-foreground">
               <Check className="h-6 w-6" strokeWidth={2.5} />
             </div>
             <div>
-              <p className="text-[15px] font-semibold tracking-[-0.01em]">Inbox Zero</p>
+              <p className="type-title">Inbox Zero</p>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 Every conversation handled. Nicely done — new messages will appear here the moment
                 they arrive.
@@ -356,35 +359,34 @@ export function ConversationListPane({
                   key={c.id}
                   href={`/inbox/${c.id}`}
                   className={cn(
-                    'group relative flex gap-2.5 rounded-lg py-2.5 pl-3 pr-2.5 transition-colors duration-150',
-                    active ? 'bg-brand-muted' : isSelected ? 'bg-accent' : 'hover:bg-accent/70',
+                    'group relative flex gap-3 rounded-xl px-3 py-3 transition-colors duration-150',
+                    active ? 'bg-brand-muted' : isSelected ? 'bg-accent' : 'hover:bg-accent/60',
                   )}
                 >
-                  {/* Priority spine */}
-                  <span
-                    className={cn(
-                      'absolute inset-y-2 left-0 w-[3px] rounded-full',
-                      PRIORITY_SPINE[c.priority] ?? 'bg-transparent',
-                    )}
-                  />
+                  {/* Priority spine — urgent and high only. A marker that
+                      appears on every row marks nothing. */}
+                  {(c.priority === 'urgent' || c.priority === 'high') && (
+                    <span
+                      className={cn(
+                        'absolute inset-y-3 left-0 w-[3px] rounded-full',
+                        PRIORITY_SPINE[c.priority],
+                      )}
+                    />
+                  )}
 
-                  <div className="relative h-9 w-9 shrink-0">
+                  <div className="relative h-10 w-10 shrink-0">
                     <Avatar
                       className={cn(
-                        'h-9 w-9 ring-1 ring-border transition-opacity duration-150',
-                        'group-hover:opacity-0',
+                        'h-10 w-10 ring-1 ring-border transition-opacity duration-150',
+                        // Only fade the face away once selecting is actually
+                        // happening. Blanking every avatar on casual hover made
+                        // scanning the list flicker.
+                        selecting && 'group-hover:opacity-0',
                         isSelected && 'opacity-0',
                       )}
                     >
                       {c.contact?.avatarUrl && <AvatarImage src={c.contact.avatarUrl} alt={name} />}
-                      <AvatarFallback
-                        className={cn(
-                          'text-[11px] font-semibold',
-                          unread
-                            ? 'bg-brand-muted text-brand'
-                            : 'bg-secondary text-muted-foreground',
-                        )}
-                      >
+                      <AvatarFallback className="type-caption bg-secondary font-semibold text-muted-foreground">
                         {initials(nameForInitials(nameInput))}
                       </AvatarFallback>
                     </Avatar>
@@ -393,10 +395,15 @@ export function ConversationListPane({
                     <button
                       onClick={(e) => toggleSelect(c.id, e)}
                       className={cn(
-                        'absolute inset-0 grid place-items-center rounded-lg border transition-all duration-150',
+                        'absolute inset-0 grid place-items-center rounded-full border transition-all duration-150',
                         isSelected
                           ? 'border-brand bg-brand text-brand-foreground opacity-100'
-                          : 'border-border-strong bg-surface text-transparent opacity-0 hover:border-brand hover:text-muted-foreground group-hover:opacity-100',
+                          : cn(
+                              'border-border-strong bg-surface text-transparent opacity-0 hover:border-brand hover:text-muted-foreground',
+                              // Reachable on hover of the avatar itself, and
+                              // shown across the list once selection begins.
+                              selecting ? 'group-hover:opacity-100' : 'hover:opacity-100',
+                            ),
                       )}
                       aria-label={isSelected ? 'Deselect' : 'Select'}
                     >
@@ -405,31 +412,34 @@ export function ConversationListPane({
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
+                    <div className="flex items-baseline justify-between gap-2.5">
                       <p
                         className={cn(
-                          'truncate text-[13px] leading-tight',
-                          unread ? 'font-semibold' : 'font-medium',
+                          'type-title truncate',
+                          !unread && 'font-medium text-foreground/90',
                         )}
                       >
                         {name}
                       </p>
-                      <span className="tabular shrink-0 text-[11px] text-muted-foreground">
+                      <span className="tabular type-caption shrink-0 text-muted-foreground/80">
                         {listTime(c.lastMessageAt)}
                       </span>
                     </div>
 
+                    {/* Two lines, not one. A single truncated line tells you
+                        almost nothing about a text message, and the second line
+                        is what lets you triage without opening the thread. */}
                     <p
                       className={cn(
-                        'mt-0.5 truncate text-[12px] leading-snug',
-                        unread ? 'text-foreground/80' : 'text-muted-foreground',
+                        'type-body mt-1 line-clamp-2',
+                        unread ? 'text-foreground/75' : 'text-muted-foreground',
                       )}
                     >
                       {c.lastMessagePreview || 'No messages yet'}
                     </p>
 
                     {hasMeta && (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         {unread && (
                           <Badge variant="brand" size="sm" className="tabular">
                             {c.unreadCount}
@@ -461,7 +471,7 @@ export function ConversationListPane({
                         )}
                         {showChannels && c.inbox && (
                           <span
-                            className="inline-flex items-center gap-1 rounded-md px-1.5 py-px text-[11px] font-medium"
+                            className="type-caption inline-flex items-center gap-1 rounded-md px-1.5 py-px font-medium"
                             style={{ backgroundColor: `${c.inbox.color}18`, color: c.inbox.color }}
                             title={`Number: ${c.inbox.name}`}
                           >
@@ -472,7 +482,7 @@ export function ConversationListPane({
                             {c.inbox.name}
                           </span>
                         )}
-                        {c.tags?.map((t) => (
+                        {c.tags?.slice(0, 2).map((t) => (
                           // Clicking a tag filters the list by it — the whole
                           // point of tagging, and previously a dead end.
                           <button
@@ -483,12 +493,17 @@ export function ConversationListPane({
                               toggleTagFilter(t.tag.id);
                             }}
                             title={`Filter by ${t.tag.name}`}
-                            className="inline-flex items-center rounded-md px-1.5 py-px text-[11px] font-medium transition-opacity hover:opacity-75"
+                            className="type-caption inline-flex items-center rounded-md px-1.5 py-px font-medium transition-opacity hover:opacity-75"
                             style={{ backgroundColor: `${t.tag.color}18`, color: t.tag.color }}
                           >
                             {t.tag.name}
                           </button>
                         ))}
+                        {(c.tags?.length ?? 0) > 2 && (
+                          <span className="type-caption text-muted-foreground/70">
+                            +{c.tags!.length - 2}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>

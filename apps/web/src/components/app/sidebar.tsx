@@ -36,8 +36,8 @@ function NavRow({
     <Link
       href={href}
       className={cn(
-        'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition-colors duration-150',
-        active ? 'font-medium text-brand' : 'text-muted-foreground hover:text-foreground',
+        'type-item group relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] transition-colors duration-150',
+        active ? 'text-brand' : 'font-normal text-muted-foreground hover:text-foreground',
       )}
     >
       {active ? (
@@ -62,8 +62,8 @@ function NavRow({
       {count ? (
         <span
           className={cn(
-            'tabular rounded-md px-1.5 py-px text-[11px] font-medium transition-colors',
-            active ? 'bg-brand/15 text-brand' : 'bg-secondary text-muted-foreground',
+            'tabular type-caption shrink-0 tracking-tight transition-colors',
+            active ? 'text-brand' : 'text-muted-foreground/70',
           )}
         >
           {count > 99 ? '99+' : count}
@@ -81,8 +81,8 @@ function SectionLabel({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between px-2.5 pb-1 pt-4 first:pt-1">
-      <span className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/70">
+    <div className="flex items-center justify-between px-2.5 pb-1.5 pt-5 first:pt-1">
+      <span className="type-micro text-muted-foreground/60">
         {children}
       </span>
       {action}
@@ -200,7 +200,7 @@ export function Sidebar({
         {inboxes.length === 0 ? (
           <Link
             href="/settings/inboxes"
-            className="flex items-center gap-2.5 rounded-lg border border-dashed border-border-strong px-2.5 py-2 text-[13px] text-muted-foreground transition-colors hover:border-brand/40 hover:bg-brand-muted/50 hover:text-brand"
+            className="flex items-center gap-2.5 rounded-lg border border-dashed border-border-strong px-2.5 py-2 type-item text-muted-foreground transition-colors hover:border-brand/40 hover:bg-brand-muted/50 hover:text-brand"
           >
             <Plus className="h-[15px] w-[15px]" />
             Connect a number

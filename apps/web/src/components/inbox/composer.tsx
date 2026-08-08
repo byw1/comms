@@ -182,7 +182,7 @@ export function Composer({
   const canSend = Boolean(body.trim()) && !pending;
 
   return (
-    <div className="px-3 pb-3 pt-1">
+    <div className="mx-auto w-full max-w-[680px] px-3 pb-3 pt-1">
       {picker.open && (
         <MacroPicker
           macros={macros}
