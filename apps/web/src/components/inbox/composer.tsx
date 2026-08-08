@@ -22,6 +22,7 @@ import {
 } from '@/components/inbox/macro-picker';
 import { applyMacro } from '@/server/actions/macros';
 import { sendTypingIndicator } from '@/server/actions/imessage';
+import { clearDraft, saveDraft } from '@/server/actions/drafts';
 import { SEND_LATER_PRESETS } from '@/lib/snooze';
 import { cn } from '@/lib/utils';
 import { useKeymap } from '@/components/app/keymap-provider';
@@ -31,6 +32,7 @@ export function Composer({
   macros,
   aiEnabled,
   aiDraft,
+  initialDraft,
   replyTo,
   onCancelReply,
   onSubmit,
@@ -40,6 +42,8 @@ export function Composer({
   aiEnabled: boolean;
   /** Pre-computed suggestion shown as ghost text; Tab accepts it. */
   aiDraft?: string | null;
+  /** The caller's unsent draft for this conversation, restored on mount. */
+  initialDraft?: { body: string; isPrivateNote: boolean } | null;
   /** The message this reply is threaded to, if any. */
   replyTo?: { id: string; body: string | null; guid: string | null } | null;
   onCancelReply?: () => void;
@@ -50,8 +54,8 @@ export function Composer({
   onSubmit: (body: string, isNote: boolean, scheduledFor?: Date) => Promise<boolean>;
 }) {
   const { enterSends } = useKeymap();
-  const [body, setBody] = useState('');
-  const [isNote, setIsNote] = useState(false);
+  const [body, setBody] = useState(initialDraft?.body ?? '');
+  const [isNote, setIsNote] = useState(initialDraft?.isPrivateNote ?? false);
   const [focused, setFocused] = useState(false);
   const [pending, start] = useTransition();
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -95,6 +99,52 @@ export function Composer({
     return () => clearTimeout(t);
   }, [body, conversationId, isNote]);
 
+  // Swapping conversations swaps the draft. Without this the component is
+  // reused across routes and the previous thread's text stays in the box.
+  const loadedFor = useRef(conversationId);
+  useEffect(() => {
+    if (loadedFor.current === conversationId) return;
+    loadedFor.current = conversationId;
+    setBody(initialDraft?.body ?? '');
+    setIsNote(initialDraft?.isPrivateNote ?? false);
+  }, [conversationId, initialDraft]);
+
+  /**
+   * Persist the draft, debounced.
+   *
+   * Deliberately does NOT run on first render: mounting a conversation whose
+   * draft is empty would otherwise fire a delete for a draft that may have been
+   * written on another device a second ago.
+   */
+  const savedBody = useRef(initialDraft?.body ?? '');
+  const savedIsNote = useRef(initialDraft?.isPrivateNote ?? false);
+  useEffect(() => {
+    if (body === savedBody.current && isNote === savedIsNote.current) return;
+    const id = conversationId;
+    const t = setTimeout(() => {
+      savedBody.current = body;
+      savedIsNote.current = isNote;
+      void saveDraft({ conversationId: id, body, isPrivateNote: isNote }).catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+  }, [body, isNote, conversationId]);
+
+  // A tab close skips the debounce entirely, which is exactly when losing the
+  // draft would hurt most. keepalive lets the request outlive the page.
+  useEffect(() => {
+    const flush = () => {
+      if (body === savedBody.current) return;
+      navigator.sendBeacon?.(
+        '/api/drafts',
+        new Blob([JSON.stringify({ conversationId, body, isPrivateNote: isNote })], {
+          type: 'application/json',
+        }),
+      );
+    };
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, [body, isNote, conversationId]);
+
   // Grow the textarea with its content instead of scrolling inside a fixed box.
   useEffect(() => {
     const el = ref.current;
@@ -108,9 +158,17 @@ export function Composer({
     if (!trimmed) return;
     // Optimistic: clear the field immediately — the shell shows the bubble.
     setBody('');
+    savedBody.current = '';
     start(async () => {
       const ok = await onSubmit(trimmed, isNote, scheduledFor);
-      if (!ok) setBody(trimmed); // restore the draft on failure
+      if (ok) {
+        void clearDraft(conversationId).catch(() => {});
+      } else {
+        // Restore what they wrote, and re-persist it: a failed send is exactly
+        // when the draft matters.
+        setBody(trimmed);
+        void saveDraft({ conversationId, body: trimmed, isPrivateNote: isNote }).catch(() => {});
+      }
     });
   }
 

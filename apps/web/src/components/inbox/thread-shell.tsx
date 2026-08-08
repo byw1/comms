@@ -30,6 +30,7 @@ export function ThreadShell({
   macros,
   aiEnabled,
   aiDraft,
+  initialDraft,
   canReact = false,
 }: {
   conversationId: string;
@@ -37,6 +38,8 @@ export function ThreadShell({
   macros: MacroOption[];
   aiEnabled: boolean;
   aiDraft?: string | null;
+  /** The signed-in user's unsent draft for this conversation. */
+  initialDraft?: { body: string; isPrivateNote: boolean } | null;
   canReact?: boolean;
 }) {
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
@@ -172,6 +175,7 @@ export function ThreadShell({
         macros={macros}
         aiEnabled={aiEnabled}
         aiDraft={aiDraft}
+        initialDraft={initialDraft}
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
         onSubmit={handleSubmit}

@@ -1,4 +1,13 @@
-import { pgTable, text, boolean, integer, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  text,
+  boolean,
+  integer,
+  timestamp,
+  jsonb,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 
 import { genId, timestamps } from './_helpers.js';
 import {
@@ -106,3 +115,39 @@ export const attachments = pgTable('attachments', {
   status: attachmentStatus('status').notNull().default('pending'),
   ...timestamps,
 });
+
+/**
+ * An unsent reply, kept per conversation per person.
+ *
+ * Without this the composer holds its text in component state, so moving to
+ * another conversation — the one thing this app is built to make fast —
+ * silently destroys whatever you had written. A draft is per USER as well as
+ * per conversation: in a shared inbox two people can be part-way through a
+ * reply to the same thread, and showing one person the other's half-finished
+ * sentence would be worse than losing it.
+ */
+export const drafts = pgTable(
+  'drafts',
+  {
+    id: text('id').primaryKey().$defaultFn(genId('draft')),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    body: text('body').notNull().default(''),
+    /** The note/reply toggle is part of the draft — losing it changes meaning. */
+    isPrivateNote: boolean('is_private_note').notNull().default(false),
+    /** The message being replied to, so the reply context survives too. */
+    replyToMessageId: text('reply_to_message_id'),
+
+    ...timestamps,
+  },
+  (d) => [
+    // One draft per person per conversation — the upsert target.
+    uniqueIndex('drafts_conversation_user_idx').on(d.conversationId, d.userId),
+    index('drafts_user_idx').on(d.userId, d.updatedAt),
+  ],
+);

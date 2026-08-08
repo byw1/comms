@@ -47,6 +47,25 @@ describe('matchesFolder — the other folders', () => {
   });
 });
 
+describe('the Drafts folder', () => {
+  it('is membership by unsent text, not by status', () => {
+    // A draft can sit on an open, snoozed or closed thread alike.
+    for (const status of ALL_STATUSES) {
+      expect(matchesFolder(status, 'drafts', true)).toBe(true);
+      expect(matchesFolder(status, 'drafts', false)).toBe(false);
+    }
+  });
+
+  it('does not pull drafted conversations out of their real folder', () => {
+    expect(matchesFolder('open', 'active', true)).toBe(true);
+    expect(matchesFolder('snoozed', 'snoozed', true)).toBe(true);
+  });
+
+  it('defaults to no draft when the flag is omitted', () => {
+    expect(matchesFolder('open', 'drafts')).toBe(false);
+  });
+});
+
 describe('folder partitioning', () => {
   it('puts every status in exactly one of inbox, snoozed and closed', () => {
     for (const status of ALL_STATUSES) {
@@ -59,7 +78,9 @@ describe('folder partitioning', () => {
 
   it('leaves nothing stranded outside every folder', () => {
     for (const status of ALL_STATUSES) {
-      const anywhere = FOLDERS.some((f) => f !== 'all' && matchesFolder(status, f));
+      const anywhere = FOLDERS.some(
+        (f) => f !== 'all' && f !== 'drafts' && matchesFolder(status, f),
+      );
       expect(anywhere, `${status} is not reachable from any folder`).toBe(true);
     }
   });
@@ -79,6 +100,10 @@ describe('folder keys and labels', () => {
     expect(isFolderKey('nonsense')).toBe(false);
     expect(isFolderKey(null)).toBe(false);
     expect(isFolderKey(undefined)).toBe(false);
+  });
+
+  it('labels the drafts folder', () => {
+    expect(folderLabel('drafts')).toBe('Drafts');
   });
 
   it('calls the default folder Inbox, not Active', () => {

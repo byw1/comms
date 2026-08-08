@@ -9,7 +9,7 @@ import {
   conversationTags,
   tags,
 } from './conversations.js';
-import { messages, attachments } from './messages.js';
+import { messages, attachments, drafts } from './messages.js';
 
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
@@ -61,6 +61,7 @@ export const conversationsRelations = relations(conversations, ({ one, many }) =
   messages: many(messages),
   participants: many(conversationParticipants),
   tags: many(conversationTags),
+  drafts: many(drafts),
 }));
 
 export const messagesRelations = relations(messages, ({ one, many }) => ({
@@ -75,6 +76,14 @@ export const messagesRelations = relations(messages, ({ one, many }) => ({
 
 export const attachmentsRelations = relations(attachments, ({ one }) => ({
   message: one(messages, { fields: [attachments.messageId], references: [messages.id] }),
+}));
+
+export const draftsRelations = relations(drafts, ({ one }) => ({
+  conversation: one(conversations, {
+    fields: [drafts.conversationId],
+    references: [conversations.id],
+  }),
+  user: one(users, { fields: [drafts.userId], references: [users.id] }),
 }));
 
 export const conversationTagsRelations = relations(conversationTags, ({ one }) => ({

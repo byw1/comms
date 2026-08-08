@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Search, Check, Loader2, Inbox as InboxIcon, X } from 'lucide-react';
+import { Search, Check, Loader2, Inbox as InboxIcon, X, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -34,10 +34,13 @@ export function ConversationListPane({
   allTags = [],
   agents = [],
   inboxes = [],
+  draftConversationIds = [],
 }: {
   conversations: ConversationListItem[];
   currentUserId: string;
   currentUserName: string;
+  /** Conversations where the signed-in user has unsent text. */
+  draftConversationIds?: string[];
   /** When multiple numbers are connected, show which inbox each conversation belongs to. */
   showChannels?: boolean;
   allTags?: { id: string; name: string; color: string }[];
@@ -47,6 +50,7 @@ export function ConversationListPane({
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const draftIds = useMemo(() => new Set(draftConversationIds), [draftConversationIds]);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkPending, startBulk] = useTransition();
@@ -98,7 +102,7 @@ export function ConversationListPane({
         return false;
       // Shared with the server filter so the list and the sidebar counts can
       // never disagree about what is in the inbox.
-      if (!matchesFolder(c.status, statusFilter)) return false;
+      if (!matchesFolder(c.status, statusFilter, draftIds.has(c.id))) return false;
       if (priorityFilter.length && !priorityFilter.includes(c.priority)) return false;
       if (slaFilter && !c.slaBreachedAt) return false;
       if (unreadFilter && c.unreadCount === 0) return false;
@@ -138,6 +142,7 @@ export function ConversationListPane({
     return rows;
   }, [
     conversations,
+    draftIds,
     assignee,
     statusFilter,
     inboxFilter,
@@ -172,9 +177,14 @@ export function ConversationListPane({
   /** Selection mode: once anything is picked, every row offers its checkbox. */
   const selecting = selected.size > 0;
 
+  // Drafts earns a tab only when you have one. An always-present empty folder
+  // is chrome; one that appears because you left something unsent is a prompt.
   const tabs = [
     { label: 'Inbox', href: '/inbox', key: 'active' },
     { label: 'Mine', href: '/inbox?assignee=me', key: 'mine' },
+    ...(draftIds.size > 0
+      ? [{ label: 'Drafts', href: '/inbox?status=drafts', key: 'drafts' }]
+      : []),
     { label: 'Snoozed', href: '/inbox?status=snoozed', key: 'snoozed' },
     { label: 'Closed', href: '/inbox?status=closed', key: 'closed' },
   ];
@@ -223,6 +233,7 @@ export function ConversationListPane({
             const isActive =
               (t.key === 'active' && !assignee && statusFilter === 'active') ||
               (t.key === 'mine' && assignee === 'me') ||
+              (t.key === 'drafts' && statusFilter === 'drafts') ||
               (t.key === 'snoozed' && statusFilter === 'snoozed') ||
               (t.key === 'closed' && statusFilter === 'closed');
             return (
@@ -318,7 +329,9 @@ export function ConversationListPane({
                     ? 'Nothing snoozed'
                     : statusFilter === 'closed'
                       ? 'Nothing closed yet'
-                      : 'Nothing here yet'}
+                      : statusFilter === 'drafts'
+                        ? 'No unsent drafts'
+                        : 'Nothing here yet'}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {query
@@ -327,7 +340,9 @@ export function ConversationListPane({
                     ? 'Snoozed conversations wait here and return to your inbox at the time you picked.'
                     : statusFilter === 'closed'
                       ? 'Conversations you close land here. They reopen automatically if someone writes back.'
-                      : 'New conversations will appear here automatically.'}
+                      : statusFilter === 'drafts'
+                        ? 'Replies you start but do not send are kept here until you finish them.'
+                        : 'New conversations will appear here automatically.'}
               </p>
             </div>
           </div>
@@ -429,14 +444,24 @@ export function ConversationListPane({
                     {/* Two lines, not one. A single truncated line tells you
                         almost nothing about a text message, and the second line
                         is what lets you triage without opening the thread. */}
-                    <p
-                      className={cn(
-                        'type-body mt-1 line-clamp-2',
-                        unread ? 'text-foreground/75' : 'text-muted-foreground',
-                      )}
-                    >
-                      {c.lastMessagePreview || 'No messages yet'}
-                    </p>
+                    {draftIds.has(c.id) ? (
+                      // An unsent reply outranks what they last said: it is the
+                      // thing you have to deal with, and the only way to notice
+                      // you left one is for the row to say so.
+                      <p className="type-body mt-1 flex items-center gap-1.5 text-muted-foreground">
+                        <Pencil className="h-3 w-3 shrink-0 text-warning" />
+                        <span className="truncate italic">Draft</span>
+                      </p>
+                    ) : (
+                      <p
+                        className={cn(
+                          'type-body mt-1 line-clamp-2',
+                          unread ? 'text-foreground/75' : 'text-muted-foreground',
+                        )}
+                      >
+                        {c.lastMessagePreview || 'No messages yet'}
+                      </p>
+                    )}
 
                     {hasMeta && (
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">

@@ -9,6 +9,7 @@ import {
   getConnectionForInbox,
 } from '@/server/queries';
 import { ThreadShell } from '@/components/inbox/thread-shell';
+import { getMyDraft } from '@/server/actions/drafts';
 import { TicketPanel } from '@/components/inbox/ticket-panel';
 import { ConversationHeader } from '@/components/inbox/conversation-header';
 import { DetailsPaneShell } from '@/components/app/mobile-shell';
@@ -25,12 +26,13 @@ export default async function ConversationPage({
   const conversation = await getConversation(conversationId);
   if (!conversation) notFound();
 
-  const [messages, agents, tags, macros, connection] = await Promise.all([
+  const [messages, agents, tags, macros, connection, draft] = await Promise.all([
     getMessages(conversationId),
     listAgents(),
     listTags(),
     listMacros(),
     getConnectionForInbox(conversation.inboxId),
+    getMyDraft(conversationId),
   ]);
 
   // Tapbacks, typing indicators and edits all require the BlueBubbles Private
@@ -75,6 +77,7 @@ export default async function ConversationPage({
           }))}
           aiEnabled={aiEnabled}
           aiDraft={ai?.draft ?? null}
+          initialDraft={draft}
           canReact={canReact}
           messages={messages.map((m) => ({
             id: m.id,

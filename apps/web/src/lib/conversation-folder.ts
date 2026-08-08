@@ -9,7 +9,15 @@
  * `active` is the URL value for the inbox. It stays that word so existing
  * links, saved views and search operators keep working.
  */
-export const FOLDERS = ['active', 'open', 'pending', 'snoozed', 'closed', 'all'] as const;
+export const FOLDERS = [
+  'active',
+  'open',
+  'pending',
+  'snoozed',
+  'closed',
+  'drafts',
+  'all',
+] as const;
 
 export type FolderKey = (typeof FOLDERS)[number];
 
@@ -22,8 +30,14 @@ export function isFolderKey(value: string | null | undefined): value is FolderKe
   return Boolean(value) && (FOLDERS as readonly string[]).includes(value!);
 }
 
-export function matchesFolder(status: string, folder: string): boolean {
+/**
+ * Drafts is the one folder whose membership isn't a status — it's "you have
+ * unsent text here", which can be true of an open, snoozed or closed thread
+ * alike. Callers pass `hasDraft` so the predicate stays a pure function.
+ */
+export function matchesFolder(status: string, folder: string, hasDraft = false): boolean {
   if (folder === 'all') return true;
+  if (folder === 'drafts') return hasDraft;
   if (folder === 'active') return (INBOX_STATUSES as string[]).includes(status);
   return status === folder;
 }
@@ -34,6 +48,7 @@ const LABELS: Record<FolderKey, string> = {
   pending: 'Pending',
   snoozed: 'Snoozed',
   closed: 'Closed',
+  drafts: 'Drafts',
   all: 'Everything',
 };
 
