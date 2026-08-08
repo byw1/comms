@@ -17,6 +17,8 @@ import {
 import { updateConversation, setFollowUp } from '@/server/actions/inbox';
 import { PresenceBar } from '@/components/inbox/presence-bar';
 import { SNOOZE_PRESETS, FOLLOW_UP_PRESETS } from '@/lib/snooze';
+import { CustomTimePicker } from '@/components/inbox/time-picker';
+import { describeTime } from '@/lib/parse-time';
 import { siblingConversationId } from '@/lib/inbox-nav';
 import { cn } from '@/lib/utils';
 
@@ -180,6 +182,19 @@ export function ConversationHeader({
                   {p.label}
                 </DropdownMenuItem>
               ))}
+
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                Snooze until a specific time
+              </DropdownMenuLabel>
+              {/* onSelect is prevented so typing in here doesn't close the menu
+                  on the first keystroke. */}
+              <div onKeyDown={(e) => e.stopPropagation()}>
+                <CustomTimePicker
+                  onPick={(at) => snooze(at, describeTime(at))}
+                  autoFocus={false}
+                />
+              </div>
             </DropdownMenuContent>
           </DropdownMenu>
         )}

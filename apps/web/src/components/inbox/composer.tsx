@@ -11,6 +11,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { AnimatePresence, motion } from '@/components/ui/motion';
@@ -24,6 +25,7 @@ import { applyMacro } from '@/server/actions/macros';
 import { sendTypingIndicator } from '@/server/actions/imessage';
 import { clearDraft, saveDraft } from '@/server/actions/drafts';
 import { SEND_LATER_PRESETS } from '@/lib/snooze';
+import { CustomTimePicker } from '@/components/inbox/time-picker';
 import { cn } from '@/lib/utils';
 import { useKeymap } from '@/components/app/keymap-provider';
 
@@ -437,6 +439,13 @@ export function Composer({
                           </DropdownMenuItem>
                         );
                       })}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                        Or a specific time
+                      </DropdownMenuLabel>
+                      <div onKeyDown={(e) => e.stopPropagation()}>
+                        <CustomTimePicker onPick={(at) => submit(at)} autoFocus={false} />
+                      </div>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
