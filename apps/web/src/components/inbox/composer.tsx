@@ -31,6 +31,7 @@ import {
   type MacroOption,
 } from '@/components/inbox/macro-picker';
 import { applyMacro } from '@/server/actions/macros';
+import { completeMessageAction } from '@/server/actions/ai';
 import { sendTypingIndicator } from '@/server/actions/imessage';
 import { clearDraft, saveDraft } from '@/server/actions/drafts';
 import { SEND_LATER_PRESETS } from '@/lib/snooze';
@@ -78,6 +79,9 @@ export function Composer({
   const lastTypingPing = useRef(0);
   /** Set once the user has acknowledged a collision, so we ask only once. */
   const confirmedCollision = useRef(false);
+  /** Inline completion shown after the caret; Tab accepts it. */
+  const [completion, setCompletion] = useState('');
+  const ghostRef = useRef<HTMLDivElement>(null);
   const picker = useMacroPickerState(macros, body);
 
   // The global `r` shortcut focuses the composer from anywhere in the thread.
@@ -163,6 +167,48 @@ export function Composer({
     return () => window.removeEventListener('pagehide', flush);
   }, [body, isNote, conversationId]);
 
+  /**
+   * Smart Compose: ask for a continuation once typing pauses.
+   *
+   * Gated hard on purpose. It costs a model call per pause, and a suggestion
+   * that arrives while someone is still typing is noise — so it only fires
+   * after 700ms of stillness, only for a real reply (never a note), only past
+   * a few words, and never when the caret is somewhere other than the end,
+   * because a completion appended to the middle of a sentence is nonsense.
+   */
+  useEffect(() => {
+    setCompletion('');
+    if (!aiEnabled || isNote) return;
+    const text = body;
+    if (text.trim().length < 8) return;
+    if (/[.!?]\s*$/.test(text)) return;
+
+    let cancelled = false;
+    const t = setTimeout(() => {
+      const el = ref.current;
+      if (el && el.selectionStart !== text.length) return;
+      void completeMessageAction({ conversationId, prefix: text })
+        .then((res) => {
+          // Only apply if the user hasn't typed on: a stale completion would
+          // attach to text it was never computed from.
+          if (cancelled) return;
+          if (ref.current?.value !== text) return;
+          setCompletion(res.completion);
+        })
+        .catch(() => {});
+    }, 700);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [body, isNote, aiEnabled, conversationId]);
+
+  // The ghost layer sits behind the textarea and must scroll with it.
+  function syncGhostScroll() {
+    if (ghostRef.current && ref.current) ghostRef.current.scrollTop = ref.current.scrollTop;
+  }
+
   // Grow the textarea with its content instead of scrolling inside a fixed box.
   useEffect(() => {
     const el = ref.current;
@@ -247,6 +293,21 @@ export function Composer({
         setBody('');
         return;
       }
+    }
+
+    // Tab accepts an inline completion first — it is the more immediate of the
+    // two suggestions, and it only exists when the field is NOT empty, so the
+    // two can never both apply.
+    if (e.key === 'Tab' && !e.shiftKey && completion) {
+      e.preventDefault();
+      setBody((b) => b + completion);
+      setCompletion('');
+      return;
+    }
+    if (e.key === 'Escape' && completion) {
+      e.preventDefault();
+      setCompletion('');
+      return;
     }
 
     // Tab accepts the pre-computed AI draft when the field is empty.
@@ -429,11 +490,27 @@ export function Composer({
         </div>
 
         <div className="flex items-end gap-2 p-2">
+          <div className="relative min-w-0 flex-1">
+            {/* Mirrors the textarea exactly and sits behind it: the typed text
+                is rendered invisibly so the completion lands in the right
+                place regardless of wrapping. Any typography change here must
+                be made on both or the ghost drifts out of alignment. */}
+            {completion && (
+              <div
+                ref={ghostRef}
+                aria-hidden
+                className="pointer-events-none absolute inset-0 max-h-[180px] overflow-hidden whitespace-pre-wrap break-words px-1.5 py-1.5 text-[13.5px] leading-[inherit]"
+              >
+                <span className="invisible">{body}</span>
+                <span className="text-muted-foreground/50">{completion}</span>
+              </div>
+            )}
           <Textarea
             ref={ref}
             value={body}
             onChange={(e) => setBody(e.target.value)}
             onKeyDown={onKeyDown}
+            onScroll={syncGhostScroll}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             placeholder={
@@ -443,9 +520,10 @@ export function Composer({
                   ? 'Type a message…  ⇥ to accept the suggested reply'
                   : 'Type a message…  /  for macros'
             }
-            className="max-h-[180px] min-h-[38px] resize-none border-0 bg-transparent px-1.5 py-1.5 text-[13.5px] shadow-none focus-visible:ring-0"
+            className="relative max-h-[180px] min-h-[38px] w-full resize-none border-0 bg-transparent px-1.5 py-1.5 text-[13.5px] shadow-none focus-visible:ring-0"
             rows={1}
           />
+          </div>
           <AnimatePresence mode="popLayout">
             {canSend || pending ? (
               <motion.div
@@ -514,6 +592,13 @@ export function Composer({
 
       {/* The hint has to follow the setting, or it teaches the wrong key. */}
       <p className="hidden items-center gap-1 px-1.5 pt-1.5 text-[10.5px] text-muted-foreground md:flex">
+        {completion && (
+          <>
+            <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">⇥</kbd>
+            to complete
+            <span className="opacity-40">·</span>
+          </>
+        )}
         {enterSends ? (
           <>
             <kbd className="rounded border bg-secondary px-1 font-sans text-[10px]">

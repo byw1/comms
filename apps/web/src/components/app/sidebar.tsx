@@ -14,6 +14,7 @@ import {
   Check,
   Pencil,
   CalendarClock,
+  Sparkles,
 } from 'lucide-react';
 import { Logo } from '@/components/brand';
 import { UserMenu } from '@/components/app/user-menu';
@@ -144,6 +145,7 @@ export function Sidebar({
     // Not a folder of conversations, but it belongs beside them: it answers
     // "what happens next" and nothing else in the app does.
     { href: '/scheduled', label: 'Scheduled', icon: CalendarClock, count: counts.pending },
+    { href: '/ask', label: 'Ask your messages', icon: Sparkles },
   ];
 
   return (
@@ -173,7 +175,9 @@ export function Sidebar({
           // in Snoozed or Closed, so two rows looked selected at once.
           const active = item.href.startsWith('/scheduled')
             ? pathname.startsWith('/scheduled')
-            : isAll
+            : item.href.startsWith('/ask')
+              ? pathname.startsWith('/ask')
+              : isAll
             ? onInbox &&
               !activeInbox &&
               !searchParams.get('assignee') &&

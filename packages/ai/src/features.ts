@@ -122,3 +122,111 @@ export async function triageConversation(input: {
     summary: (data.summary ?? '').slice(0, 400),
   };
 }
+
+/**
+ * One excerpt handed to the archive Q&A, with enough context to be cited.
+ */
+export interface ArchiveExcerpt {
+  conversationId: string;
+  conversationName: string;
+  at: string;
+  direction: 'inbound' | 'outbound';
+  body: string;
+}
+
+export interface ArchiveAnswer {
+  answer: string;
+  /** Conversation ids the model said it used. */
+  usedConversationIds: string[];
+}
+
+/**
+ * Answer a question from excerpts of the message archive.
+ *
+ * Retrieval happens in SQL before this is called; the model's job is only to
+ * read what it was given. The prompt is explicit that it must not answer from
+ * general knowledge, because the failure mode people cannot detect is a
+ * confident answer about their own messages that no message actually supports.
+ */
+export async function answerFromArchive(input: {
+  question: string;
+  excerpts: ArchiveExcerpt[];
+}): Promise<ArchiveAnswer> {
+  if (input.excerpts.length === 0) {
+    return { answer: "I couldn't find anything in your messages about that.", usedConversationIds: [] };
+  }
+
+  const context = input.excerpts
+    .map(
+      (e, i) =>
+        `[${i + 1}] ${e.conversationName} · ${e.at} · ${
+          e.direction === 'inbound' ? 'them' : 'you'
+        }\n${e.body}`,
+    )
+    .join('\n\n');
+
+  const res = await getAnthropic().messages.create({
+    model: getModel(),
+    max_tokens: 700,
+    system: [
+      'You answer questions about the user\'s own text-message history.',
+      'You are given numbered excerpts retrieved from their messages. Answer ONLY from those excerpts.',
+      'If the excerpts do not contain the answer, say so plainly and say what you did find instead — never fill the gap from general knowledge, and never guess at a number, date, price or commitment.',
+      'Cite the excerpts you used inline as [1], [2]. Quote short fragments where the exact wording matters.',
+      'Be direct and brief. No preamble, no restating the question.',
+    ].join(' '),
+    messages: [
+      {
+        role: 'user',
+        content: `Question: ${input.question}\n\nExcerpts from my messages:\n\n${context}`,
+      },
+    ],
+  });
+
+  const answer = extractText(res.content);
+  // Map the [n] citations back to conversations so the UI can link them.
+  const cited = new Set<string>();
+  for (const m of answer.matchAll(/\[(\d+)\]/g)) {
+    const idx = Number(m[1]) - 1;
+    const ex = input.excerpts[idx];
+    if (ex) cited.add(ex.conversationId);
+  }
+  return { answer, usedConversationIds: Array.from(cited) };
+}
+
+/**
+ * Continue the sentence the user is part-way through typing.
+ *
+ * Deliberately short and deliberately conservative: a completion that runs on
+ * past what someone meant to say is worse than no completion, because it is
+ * accepted with one keystroke and sent to a real person.
+ */
+export async function completeMessage(input: {
+  contactName?: string | null;
+  messages: TranscriptMessage[];
+  prefix: string;
+}): Promise<string> {
+  const res = await getAnthropic().messages.create({
+    model: getModel(),
+    max_tokens: 60,
+    system: [
+      'You complete the message the user is currently typing in a text-message thread.',
+      'Output ONLY the continuation — the characters that follow their text. Do not repeat what they already wrote.',
+      'Finish the current sentence and stop. At most about twelve words.',
+      'Match their voice, casing and punctuation exactly. Texting is informal; do not make it more formal than the thread.',
+      'Never invent facts, prices, dates, times or commitments. If the natural continuation would require a fact you do not have, output nothing.',
+      'If their text already reads as complete, output nothing.',
+    ].join(' '),
+    messages: [
+      {
+        role: 'user',
+        content: `${formatTranscript(input.messages, input.contactName) || 'No messages yet.'}\n\nI am typing this reply and stopped mid-thought:\n"${input.prefix}"\n\nContinuation:`,
+      },
+    ],
+  });
+
+  const out = extractText(res.content);
+  // The model sometimes echoes the prefix despite the instruction.
+  const cleaned = out.startsWith(input.prefix) ? out.slice(input.prefix.length) : out;
+  return cleaned.replace(/^["']|["']$/g, '').trimEnd();
+}
