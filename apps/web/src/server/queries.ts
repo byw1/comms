@@ -31,10 +31,41 @@ export type ConversationFilter = {
   priorityIn?: Array<'low' | 'normal' | 'high' | 'urgent'>;
   slaBreached?: boolean;
   unreadOnly?: boolean;
+  /**
+   * They opened your last message and never wrote back.
+   *
+   * A completely different state from "they never saw it", and the most
+   * actionable signal iMessage gives us — email clients approximate this with
+   * tracking pixels; Apple hands us the real timestamp.
+   */
+  readNoReply?: boolean;
   sort?: 'newest' | 'oldest' | 'priority';
   search?: string;
   currentUserId?: string;
 };
+
+/**
+ * True when some outbound message has been read and nothing inbound arrived
+ * after it — i.e. the ball is in their court and they know it.
+ *
+ * Computed rather than denormalized: a `lastOutboundReadAt` column would have
+ * to be maintained at four write sites (send, ingest echo, updated-message
+ * receipt, chat-read-status webhook) and would be wrong the moment one of them
+ * was missed.
+ */
+const READ_NO_REPLY = sql<boolean>`exists (
+  select 1 from ${messages} m
+  where m.conversation_id = ${conversations.id}
+    and m.direction = 'outbound'
+    and m.is_private_note = false
+    and m.read_at is not null
+    and not exists (
+      select 1 from ${messages} m2
+      where m2.conversation_id = ${conversations.id}
+        and m2.direction = 'inbound'
+        and m2.created_at > m.created_at
+    )
+)`;
 
 /** SQL conditions shared by the list query and the per-view counts. */
 function buildConversationWhere(filter: ConversationFilter) {
@@ -59,6 +90,7 @@ function buildConversationWhere(filter: ConversationFilter) {
     where.push(inArray(conversations.priority, filter.priorityIn));
   }
 
+  if (filter.readNoReply) where.push(READ_NO_REPLY);
   if (filter.slaBreached) where.push(sql`${conversations.slaBreachedAt} is not null`);
   if (filter.unreadOnly) where.push(sql`${conversations.unreadCount} > 0`);
 
@@ -109,6 +141,9 @@ export async function listConversations(filter: ConversationFilter = {}) {
     where: where.length ? and(...where) : undefined,
     orderBy: orderFor(filter.sort, filter.status),
     limit: 100,
+    // Carried on every row so the client-side filter can apply the same rule
+    // the server does without a second round trip.
+    extras: { readNoReply: READ_NO_REPLY.as('read_no_reply') },
     with: {
       // Identities come along so an unnamed thread can show the phone number
       // instead of a blank row.

@@ -53,6 +53,7 @@ export function useInboxFilters() {
       priorityIn: searchParams.get('priority')?.split(',').filter(Boolean) ?? [],
       slaBreached: searchParams.get('sla') === 'breached',
       unreadOnly: searchParams.get('unread') === '1',
+      readNoReply: searchParams.get('seen') === '1',
       sort: searchParams.get('sort') ?? 'newest',
     }),
     [searchParams],
@@ -89,7 +90,8 @@ export function useInboxFilters() {
     filters.tagIds.length +
     filters.priorityIn.length +
     (filters.slaBreached ? 1 : 0) +
-    (filters.unreadOnly ? 1 : 0);
+    (filters.unreadOnly ? 1 : 0) +
+    (filters.readNoReply ? 1 : 0);
 
   const clearAll = useCallback(() => router.push('/inbox'), [router]);
 
@@ -149,6 +151,7 @@ export function FilterBar({
           priorityIn: filters.priorityIn as never,
           slaBreached: filters.slaBreached || undefined,
           unreadOnly: filters.unreadOnly || undefined,
+          readNoReply: filters.readNoReply || undefined,
           sort: filters.sort as never,
         },
       });
@@ -246,6 +249,11 @@ export function FilterBar({
             <span className="flex-1">Unread only</span>
             {filters.unreadOnly && <Check className="h-3.5 w-3.5" />}
           </DropdownMenuItem>
+          {/* "They saw it and said nothing" — the state worth chasing. */}
+          <DropdownMenuItem onClick={() => setParam('seen', filters.readNoReply ? null : '1')}>
+            <span className="flex-1">Read, no reply</span>
+            {filters.readNoReply && <Check className="h-3.5 w-3.5" />}
+          </DropdownMenuItem>
 
           {inboxes.length > 1 && (
             <>
@@ -321,6 +329,13 @@ export function FilterBar({
         ))}
         {filters.slaBreached && (
           <FilterChip key="sla" label="Breaching SLA" onClear={() => setParam('sla', null)} />
+        )}
+        {filters.readNoReply && (
+          <FilterChip
+            key="seen"
+            label="Read, no reply"
+            onClear={() => setParam('seen', null)}
+          />
         )}
         {filters.unreadOnly && (
           <FilterChip key="unread" label="Unread" onClear={() => setParam('unread', null)} />

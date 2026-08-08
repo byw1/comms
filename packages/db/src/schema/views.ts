@@ -13,6 +13,8 @@ export interface ViewFilters {
   /** Only conversations past (or approaching) their SLA. */
   slaBreached?: boolean;
   unreadOnly?: boolean;
+  /** They opened your last message and never wrote back. */
+  readNoReply?: boolean;
   sort?: 'newest' | 'oldest' | 'priority';
 }
 

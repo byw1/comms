@@ -212,6 +212,28 @@ export function MessageThread({
 
   let lastDay = '';
 
+  /**
+   * The last outbound message that the recipient actually opened.
+   *
+   * Apple gives us a real timestamp here, unlike the tracking pixels every
+   * email client relies on — it is accurate, unblockable and not a trick. Only
+   * the most recent one is annotated: iMessage shows one read line, and a
+   * timestamp under every message you ever sent would be noise.
+   */
+  const readReceiptId = (() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i]!;
+      if (m.authorType === 'system' || m.reactionType) continue;
+      // An inbound reply supersedes the receipt: once they answered, "they
+      // read it" stops being the interesting fact.
+      if (m.direction === 'inbound') return null;
+      if (m.isPrivateNote) continue;
+      if (m.readAt) return m.id;
+      return null;
+    }
+    return null;
+  })();
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-5 md:py-6">
       <div className="mx-auto w-full max-w-[680px] space-y-1">
@@ -362,6 +384,15 @@ export function MessageThread({
                   >
                     <span className="tabular">{clockTime(stamp)}</span>
                     {isOutbound && <StatusTick message={m} />}
+                  </div>
+                )}
+
+                {m.id === readReceiptId && (
+                  <div className="type-caption mt-0.5 flex items-center gap-1 px-1 text-muted-foreground">
+                    <CheckCheck className="h-3 w-3 text-brand" />
+                    <span>
+                      Read <span className="tabular">{clockTime(m.readAt)}</span>
+                    </span>
                   </div>
                 )}
               </div>

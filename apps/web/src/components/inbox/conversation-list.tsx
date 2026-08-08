@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Search, Check, Loader2, Inbox as InboxIcon, X, Pencil } from 'lucide-react';
+import { Search, Check, Loader2, Inbox as InboxIcon, X, Pencil, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -86,6 +86,7 @@ export function ConversationListPane({
   const priorityFilter = searchParams.get('priority')?.split(',').filter(Boolean) ?? [];
   const slaFilter = searchParams.get('sla') === 'breached';
   const unreadFilter = searchParams.get('unread') === '1';
+  const seenFilter = searchParams.get('seen') === '1';
   const sort = searchParams.get('sort') ?? 'newest';
   const activeId = pathname.startsWith('/inbox/') ? pathname.split('/inbox/')[1] : null;
 
@@ -106,6 +107,7 @@ export function ConversationListPane({
       if (priorityFilter.length && !priorityFilter.includes(c.priority)) return false;
       if (slaFilter && !c.slaBreachedAt) return false;
       if (unreadFilter && c.unreadCount === 0) return false;
+      if (seenFilter && !c.readNoReply) return false;
       // AND semantics: every selected tag must be present.
       if (tagFilter.length) {
         const ids = new Set(c.tags?.map((t) => t.tag.id) ?? []);
@@ -153,6 +155,7 @@ export function ConversationListPane({
     priorityFilter.join(','),
     slaFilter,
     unreadFilter,
+    seenFilter,
     sort,
   ]);
 
@@ -363,6 +366,7 @@ export function ConversationListPane({
               const unread = c.unreadCount > 0;
               const hasMeta =
                 unread ||
+                c.readNoReply ||
                 Boolean(c.slaBreachedAt) ||
                 Boolean(c.nextResponseDueAt && c.status !== 'closed') ||
                 (c.status !== 'open' && c.status !== 'closed') ||
@@ -468,6 +472,14 @@ export function ConversationListPane({
                         {unread && (
                           <Badge variant="brand" size="sm" className="tabular">
                             {c.unreadCount}
+                          </Badge>
+                        )}
+                        {/* Apple tells us they opened it. Saying so is the
+                            whole reason this data is worth having. */}
+                        {c.readNoReply && !unread && (
+                          <Badge variant="outline" size="sm" className="gap-1">
+                            <Eye className="h-3 w-3" />
+                            Seen
                           </Badge>
                         )}
                         {c.slaBreachedAt ? (
