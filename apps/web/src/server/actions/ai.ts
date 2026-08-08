@@ -159,7 +159,12 @@ export async function askArchiveAction(question: string): Promise<AskResult> {
         ${nameFilter}
       ))`,
     )
-    .orderBy(desc(sql`rank`), desc(messages.createdAt))
+    .orderBy(
+      desc(
+        sql`ts_rank(to_tsvector('english', coalesce(${messages.body}, '')), websearch_to_tsquery('english', ${q}))`,
+      ),
+      desc(messages.createdAt),
+    )
     .limit(40);
 
   if (rows.length === 0) {

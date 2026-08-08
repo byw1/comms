@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { localTimeForAddress, zoneForAddress } from '../src/lib/area-code-time';
+import {
+  KNOWN_AREA_CODES,
+  localTimeForAddress,
+  zoneForAddress,
+} from '../src/lib/area-code-time';
 
 describe('zoneForAddress', () => {
   it('reads the area code with or without the country code', () => {
@@ -38,6 +42,34 @@ describe('zoneForAddress', () => {
 
   it('does not treat a long international number as North American', () => {
     expect(zoneForAddress('+861012345678')).toBeNull();
+  });
+});
+
+describe('the table itself', () => {
+  it('puts the well-known codes in the right zone', () => {
+    // Five codes were originally listed under two zones, and the second
+    // assignment silently won — 435 (Utah), 323 (Los Angeles) and 986 (Idaho)
+    // all resolved to the wrong coast.
+    const expected: Record<string, string> = {
+      '435': 'America/Denver',       // Utah
+      '986': 'America/Denver',       // Idaho
+      '323': 'America/Los_Angeles',  // Los Angeles
+      '351': 'America/New_York',     // Massachusetts
+      '667': 'America/New_York',     // Maryland
+      '212': 'America/New_York',
+      '415': 'America/Los_Angeles',
+      '312': 'America/Chicago',
+      '602': 'America/Phoenix',
+    };
+    for (const [code, zone] of Object.entries(expected)) {
+      expect(zoneForAddress(`+1${code}5551234`), code).toBe(zone);
+    }
+  });
+
+  it('has no code in two zones', () => {
+    // Guarded at module load too, but asserted here so the reason is written
+    // down rather than living only in a thrown error nobody reads.
+    expect(Object.keys(KNOWN_AREA_CODES).length).toBeGreaterThan(250);
   });
 });
 

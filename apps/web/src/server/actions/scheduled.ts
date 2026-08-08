@@ -137,11 +137,9 @@ export async function rescheduleMessage(
   }
   if (msg.status !== 'queued') return { ok: false, error: 'Too late — already sent.' };
 
-  const removed = await outboundQueue()
-    .remove(messageId)
-    .catch(() => 0);
-  if (!removed) return { ok: false, error: 'Too late — already sending.' };
-
+  // Everything that can fail happens BEFORE the job is removed. Removing first
+  // and then bailing would leave the message stuck in 'queued' with nothing
+  // scheduled to send it — a message that silently never goes out.
   const conv = await db.query.conversations.findFirst({
     where: eq(conversations.id, msg.conversationId),
   });
@@ -149,6 +147,11 @@ export async function rescheduleMessage(
   if (!conv || !connection) {
     return { ok: false, error: 'This conversation has no connected number.' };
   }
+
+  const removed = await outboundQueue()
+    .remove(messageId)
+    .catch(() => 0);
+  if (!removed) return { ok: false, error: 'Too late — already sending.' };
 
   await db.update(messages).set({ scheduledFor: at }).where(eq(messages.id, messageId));
   await enqueueOutbound(
@@ -205,15 +208,17 @@ export async function rescheduleConversation(
 /** Counts for the sidebar badge. */
 export async function pendingCount(): Promise<number> {
   await requireUser();
-  const [row] = await db
-    .select({
-      n: sql<number>`(
-        select count(*) from ${messages}
-        where scheduled_for is not null and status = 'queued'
-      ) + (
-        select count(*) from ${conversations} where follow_up_at is not null
-      )`,
-    })
-    .from(sql`(select 1) as one`);
-  return Number(row?.n ?? 0);
+  // Two plain counts rather than one expression over a synthetic FROM — the
+  // clever version depended on how the query builder renders a bare subselect.
+  const [sends, reminders] = await Promise.all([
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(messages)
+      .where(and(isNotNull(messages.scheduledFor), eq(messages.status, 'queued'))),
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(conversations)
+      .where(isNotNull(conversations.followUpAt)),
+  ]);
+  return Number(sends[0]?.n ?? 0) + Number(reminders[0]?.n ?? 0);
 }
