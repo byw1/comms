@@ -2,6 +2,7 @@ import 'server-only';
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from '@comms/db';
 import {
   attachments,
+  contactIdentities,
   conversations,
   drafts,
   conversationTags,
@@ -360,4 +361,97 @@ export async function listUnhealthyConnections() {
       inboxName: r.inboxName,
       reason: (r.status === 'connected' ? 'stale' : 'error') as 'error' | 'stale',
     }));
+}
+
+export interface PersonContext {
+  /** Every address we know for them, formatted for display. */
+  addresses: { value: string; raw: string | null }[];
+  /** Most recent message either way. */
+  lastMessageAt: Date | null;
+  /** Most recent message FROM them — "when did I last hear from you". */
+  lastInboundAt: Date | null;
+  /** First message either way, so the relationship has a start date. */
+  firstMessageAt: Date | null;
+  totalMessages: number;
+  /** Messages in the last 90 days, which is what "how often" actually means. */
+  recentMessages: number;
+  /** Image attachments in this conversation, newest first. */
+  photos: { id: string; fileName: string | null }[];
+  photoCount: number;
+}
+
+/**
+ * Everything the details panel needs to answer "who am I talking to".
+ *
+ * One query per fact rather than one giant join: they have different shapes
+ * (aggregate, list, limit) and a join would multiply rows against the
+ * attachments table.
+ */
+export async function getPersonContext(
+  conversationId: string,
+  contactId: string | null,
+): Promise<PersonContext> {
+  const [identityRows, stats, photoRows, photoTotal] = await Promise.all([
+    contactId
+      ? db
+          .select({ value: contactIdentities.value, raw: contactIdentities.rawValue })
+          .from(contactIdentities)
+          .where(eq(contactIdentities.contactId, contactId))
+      : Promise.resolve([]),
+
+    db
+      .select({
+        total: sql<number>`count(*)`,
+        recent: sql<number>`count(*) filter (where ${messages.createdAt} > now() - interval '90 days')`,
+        lastAt: sql<Date | null>`max(coalesce(${messages.sentAt}, ${messages.createdAt}))`,
+        firstAt: sql<Date | null>`min(coalesce(${messages.sentAt}, ${messages.createdAt}))`,
+        lastInbound: sql<Date | null>`max(coalesce(${messages.sentAt}, ${messages.createdAt})) filter (where ${messages.direction} = 'inbound')`,
+      })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          // System events are ours, not theirs, and would inflate every count.
+          sql`${messages.authorType} <> 'system'`,
+        ),
+      ),
+
+    db
+      .select({ id: attachments.id, fileName: attachments.fileName })
+      .from(attachments)
+      .innerJoin(messages, eq(messages.id, attachments.messageId))
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          eq(attachments.status, 'stored'),
+          sql`${attachments.mimeType} like 'image/%'`,
+        ),
+      )
+      .orderBy(desc(messages.createdAt))
+      .limit(6),
+
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(attachments)
+      .innerJoin(messages, eq(messages.id, attachments.messageId))
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          eq(attachments.status, 'stored'),
+          sql`${attachments.mimeType} like 'image/%'`,
+        ),
+      ),
+  ]);
+
+  const s = stats[0];
+  return {
+    addresses: identityRows,
+    lastMessageAt: s?.lastAt ? new Date(s.lastAt) : null,
+    lastInboundAt: s?.lastInbound ? new Date(s.lastInbound) : null,
+    firstMessageAt: s?.firstAt ? new Date(s.firstAt) : null,
+    totalMessages: Number(s?.total ?? 0),
+    recentMessages: Number(s?.recent ?? 0),
+    photos: photoRows,
+    photoCount: Number(photoTotal[0]?.n ?? 0),
+  };
 }

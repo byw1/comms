@@ -7,6 +7,7 @@ import {
   listTags,
   listMacros,
   getConnectionForInbox,
+  getPersonContext,
 } from '@/server/queries';
 import { ThreadShell } from '@/components/inbox/thread-shell';
 import { getMyDraft } from '@/server/actions/drafts';
@@ -26,13 +27,14 @@ export default async function ConversationPage({
   const conversation = await getConversation(conversationId);
   if (!conversation) notFound();
 
-  const [messages, agents, tags, macros, connection, draft] = await Promise.all([
+  const [messages, agents, tags, macros, connection, draft, person] = await Promise.all([
     getMessages(conversationId),
     listAgents(),
     listTags(),
     listMacros(),
     getConnectionForInbox(conversation.inboxId),
     getMyDraft(conversationId),
+    getPersonContext(conversationId, conversation.contactId),
   ]);
 
   // Tapbacks, typing indicators and edits all require the BlueBubbles Private
@@ -124,6 +126,19 @@ export default async function ConversationPage({
               ),
           inboxName: conversation.inbox?.name ?? 'Inbox',
           tagIds: conversation.tags?.map((t) => t.tag.id) ?? [],
+        }}
+        person={{
+          name: contactName,
+          avatarUrl: conversation.contact?.avatarUrl ?? null,
+          addresses: person.addresses,
+          lastMessageAt: person.lastMessageAt?.toISOString() ?? null,
+          lastInboundAt: person.lastInboundAt?.toISOString() ?? null,
+          firstMessageAt: person.firstMessageAt?.toISOString() ?? null,
+          totalMessages: person.totalMessages,
+          recentMessages: person.recentMessages,
+          photos: person.photos,
+          photoCount: person.photoCount,
+          isGroup: conversation.isGroup,
         }}
         agents={agents.map((a) => ({ id: a.id, name: a.name, email: a.email }))}
         allTags={tags.map((t) => ({ id: t.id, name: t.name, color: t.color }))}

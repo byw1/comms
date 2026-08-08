@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Sparkles, AlertTriangle, Clock, Star } from 'lucide-react';
+import { Sparkles, AlertTriangle, Clock, Star, ChevronRight } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   Select,
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { updateConversation, toggleTag } from '@/server/actions/inbox';
 import { relativeTime } from '@/lib/format';
+import { PersonCard, type PersonCardProps } from '@/components/inbox/person-card';
 import { cn, initials } from '@/lib/utils';
 
 const UNASSIGNED = '__unassigned__';
@@ -44,6 +45,39 @@ function Section({
   );
 }
 
+/**
+ * A section you can fold away. Used for the ticket controls, which are
+ * administration rather than context — a personal user never opens them, and a
+ * support user opens them once per conversation, not every time they look.
+ */
+function CollapsibleSection({
+  label,
+  children,
+  defaultOpen = true,
+}: {
+  label: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="border-t px-4 py-3.5">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="type-micro flex w-full items-center gap-1.5 text-muted-foreground/70 transition-colors hover:text-foreground"
+      >
+        <ChevronRight
+          className={cn('h-3 w-3 transition-transform duration-150', open && 'rotate-90')}
+        />
+        {label}
+      </button>
+      {open && <div className="mt-2.5">{children}</div>}
+    </section>
+  );
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3">
@@ -59,6 +93,7 @@ export function TicketPanel({
   allTags,
   ai,
   sla,
+  person,
 }: {
   conversation: {
     id: string;
@@ -70,6 +105,8 @@ export function TicketPanel({
     inboxName: string;
     tagIds: string[];
   };
+  /** Who you are talking to — rendered above the workflow controls. */
+  person?: PersonCardProps | null;
   agents: { id: string; name: string | null; email: string }[];
   allTags: { id: string; name: string; color: string }[];
   ai?: { summary?: string; topic?: string; sentiment?: string } | null;
@@ -117,21 +154,23 @@ export function TicketPanel({
 
   return (
     <aside className="flex h-full w-[85vw] max-w-[320px] shrink-0 flex-col overflow-y-auto border-l bg-surface lg:w-[288px]">
-      <div className="flex flex-col items-center gap-2.5 px-4 py-5 text-center">
-        <Avatar className="h-14 w-14 ring-1 ring-border">
-          <AvatarFallback className="bg-brand-muted text-base font-semibold text-brand">
-            {initials(conversation.contactName)}
-          </AvatarFallback>
-        </Avatar>
-        <div className="min-w-0">
-          <p className="truncate text-[14px] font-semibold tracking-[-0.01em]">
-            {conversation.contactName}
-          </p>
-          <p className="truncate font-mono text-[11.5px] text-muted-foreground">
-            {conversation.contactIdentities[0] ?? 'No contact info'}
-          </p>
+      {person ? (
+        <PersonCard {...person} />
+      ) : (
+        <div className="flex flex-col items-center gap-2.5 px-4 py-5 text-center">
+          <Avatar className="h-14 w-14 ring-1 ring-border">
+            <AvatarFallback className="bg-brand-muted text-base font-semibold text-brand">
+              {initials(conversation.contactName)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="type-title truncate">{conversation.contactName}</p>
+            <p className="type-body truncate text-muted-foreground">
+              {conversation.contactIdentities[0] ?? 'No contact info'}
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {ai?.summary && (
         <Section label="AI summary" icon={Sparkles}>
@@ -160,7 +199,7 @@ export function TicketPanel({
         </Section>
       )}
 
-      <Section label="Ticket">
+      <CollapsibleSection label="Ticket" defaultOpen={false}>
         <div className="space-y-2.5">
           <Field label="Assignee">
             <Select
@@ -248,7 +287,7 @@ export function TicketPanel({
             </Select>
           </Field>
         </div>
-      </Section>
+      </CollapsibleSection>
 
       <Section label="Tags">
         {allTags.length === 0 ? (
