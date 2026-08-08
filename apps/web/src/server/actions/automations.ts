@@ -163,6 +163,7 @@ export async function dryRunRules(input: {
   priority?: 'low' | 'normal' | 'high' | 'urgent';
   tagIds?: string[];
   contactIsFirstTime?: boolean;
+  kind?: 'person' | 'unknown' | 'automated' | 'otp';
   atTime?: string;
 }): Promise<DryRunResult[]> {
   await requireAdmin();
@@ -214,6 +215,12 @@ export async function dryRunRules(input: {
     if (matched && c.inboxId && input.inboxId && c.inboxId !== input.inboxId) {
       matched = false;
       reason = 'different channel';
+    }
+    // The tester defaults to a person, which is what an operator is picturing
+    // when they type a message into the box.
+    if (matched && c.kindIn?.length && !c.kindIn.includes(input.kind ?? 'person')) {
+      matched = false;
+      reason = `sender is a ${input.kind ?? 'person'}, rule wants ${c.kindIn.join('/')}`;
     }
     if (
       matched &&

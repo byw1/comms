@@ -11,6 +11,14 @@
     "./bluebubbles": {
       "types": "./dist/bluebubbles/index.d.ts",
       "import": "./dist/bluebubbles/index.js"
+    },
+    "./correspondent": {
+      "types": "./dist/correspondent.d.ts",
+      "import": "./dist/correspondent.js"
+    },
+    "./commitments": {
+      "types": "./dist/commitments.d.ts",
+      "import": "./dist/commitments.js"
     }
   },
   "main": "./dist/index.js",

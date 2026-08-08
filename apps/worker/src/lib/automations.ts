@@ -94,7 +94,7 @@ export interface AutomationContext {
 /** Evaluate one rule's conditions. Exported so the dry-run tester shares it. */
 export function conditionsMatch(
   conditions: AutomationConditions,
-  conv: Pick<typeof conversations.$inferSelect, 'inboxId' | 'priority'>,
+  conv: Pick<typeof conversations.$inferSelect, 'inboxId' | 'priority' | 'kind'>,
   ctx: { bodyText?: string | null; tagIds: string[]; contactConversationCount: number },
   hours: BusinessHours,
   now = new Date(),
@@ -112,6 +112,8 @@ export function conditionsMatch(
   if (conditions.priorityIn?.length && !conditions.priorityIn.includes(conv.priority)) {
     return false;
   }
+
+  if (conditions.kindIn?.length && !conditions.kindIn.includes(conv.kind)) return false;
 
   if (conditions.hasTagIds?.length) {
     const owned = new Set(ctx.tagIds);
@@ -264,6 +266,10 @@ export async function runAutomations(
     if (a.setStatus) patch.status = a.setStatus;
     if (a.setPriority) patch.priority = a.setPriority;
     if (a.assignToUserId !== undefined) patch.assigneeId = a.assignToUserId;
+    // Route to a team. Declared in the action type since the first schema and
+    // never executed until now — a rule that silently did nothing.
+    if (a.assignToTeamId !== undefined) patch.assignedTeamId = a.assignToTeamId;
+    if (a.mute) patch.mutedAt = new Date();
     if (a.snoozeMinutes) {
       patch.status = 'snoozed';
       patch.snoozedUntil = new Date(Date.now() + a.snoozeMinutes * 60_000);

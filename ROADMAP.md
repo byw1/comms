@@ -53,7 +53,11 @@ What makes Comms enterprise rather than a personal bridge.
 
 - ✅ Real-time presence ("Sarah is viewing / typing…") + collision warnings
 - ✅ @mentions in internal notes with notifications (+ notification bell)
-- ✅ Assignment rules engine (round-robin + least-busy auto-assignment)
+- ✅ Assignment rules engine (round-robin + least-busy auto-assignment), scoped
+  to the routed team when a conversation has one
+- ✅ **Teams** — clients routed to a group, not just a person. Assign a contact
+  to a team once and every thread they start inherits it; per-team sidebar
+  rows, filters and round-robin
 - ✅ Shared drafts — write a reply, share it for review, a teammate approves &
   sends it (with "drafted by" attribution)
 - ⬜ Skills-based / business-hours routing; escalation / handoff with context
@@ -66,7 +70,15 @@ What makes Comms enterprise rather than a personal bridge.
   conditions → actions (status/priority/assign/tags), with a no-code rule builder
 - ✅ Bulk actions (multi-select close/reopen in the conversation list)
 - ✅ Pause-on-pending SLA (clock pauses when not actively open)
-- ⬜ Saved views / custom inboxes; merge/split/link; cross-handle entity resolution
+- ✅ **Folders** — a named filter with a place to live: a sidebar row or a
+  section inside the inbox list (the split inbox). Membership is computed, so a
+  new folder already contains its history and threads leave when they stop
+  matching
+- ✅ Split inbox by correspondent — People / Unknown / Automated / Verification
+  codes, classified from traffic at ingest, with a copy-the-code chip on OTP rows
+- ✅ Automations can route to a team, mute a thread, and condition on the
+  correspondent kind
+- ⬜ Merge/split/link conversations; cross-handle entity resolution
 - ⬜ Full business-hours-aware SLA windows
 
 ## Wave 4 — Performance & UX excellence 🚧

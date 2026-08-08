@@ -9,6 +9,7 @@ export * from './storage.js';
 export * from './ids.js';
 export * from './template.js';
 export * from './commitments.js';
+export * from './correspondent.js';
 export * from './media.js';
 export * from './transcribe.js';
 export * from './bluebubbles/index.js';

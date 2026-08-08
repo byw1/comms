@@ -38,6 +38,16 @@ const SORTS = [
   { key: 'priority', label: 'Priority' },
 ] as const;
 
+/** The split-inbox axis, in the words a person would use for it. */
+export const KINDS = [
+  { key: 'person', label: 'People' },
+  { key: 'unknown', label: 'Unknown numbers' },
+  { key: 'automated', label: 'Automated' },
+  { key: 'otp', label: 'Verification codes' },
+] as const;
+
+export const kindLabel = (k: string) => KINDS.find((x) => x.key === k)?.label ?? k;
+
 /** Read/write the inbox filter set through the URL, so views are shareable. */
 export function useInboxFilters() {
   const searchParams = useSearchParams();
@@ -48,6 +58,9 @@ export function useInboxFilters() {
     () => ({
       status: searchParams.get('status') ?? 'active',
       assignee: searchParams.get('assignee') ?? undefined,
+      teamId: searchParams.get('team') ?? undefined,
+      kind: searchParams.get('kind') ?? undefined,
+      bodyContains: searchParams.get('words')?.split(',').filter(Boolean) ?? [],
       inboxId: searchParams.get('inbox') ?? undefined,
       tagIds: searchParams.get('tags')?.split(',').filter(Boolean) ?? [],
       priorityIn: searchParams.get('priority')?.split(',').filter(Boolean) ?? [],
@@ -87,6 +100,9 @@ export function useInboxFilters() {
   const activeCount =
     (filters.status !== 'active' ? 1 : 0) +
     (filters.assignee ? 1 : 0) +
+    (filters.teamId ? 1 : 0) +
+    (filters.kind ? 1 : 0) +
+    filters.bodyContains.length +
     (filters.inboxId ? 1 : 0) +
     filters.tagIds.length +
     filters.priorityIn.length +
@@ -126,39 +142,58 @@ export function FilterBar({
   allTags,
   agents,
   inboxes,
+  teams = [],
 }: {
   allTags: { id: string; name: string; color: string }[];
   agents: { id: string; name: string | null; email: string }[];
   inboxes: { id: string; name: string }[];
+  teams?: { id: string; name: string; color: string }[];
 }) {
   const { filters, setParam, toggleInList, activeCount, clearAll } = useInboxFilters();
   const [saveOpen, setSaveOpen] = useState(false);
   const [viewName, setViewName] = useState('');
+  const [display, setDisplay] = useState<'sidebar' | 'section'>('sidebar');
   const [pending, start] = useTransition();
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const tagById = useMemo(() => new Map(allTags.map((t) => [t.id, t])), [allTags]);
   const agentById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents]);
+  const teamById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
 
-  function saveView() {
+  /** The current filter set, in the shape a folder stores. */
+  const asViewFilters = useCallback(
+    () => ({
+      status: filters.status as never,
+      assignee: filters.assignee,
+      teamId: filters.teamId,
+      kind: filters.kind as never,
+      bodyContains: filters.bodyContains.length ? filters.bodyContains : undefined,
+      inboxId: filters.inboxId,
+      tagIds: filters.tagIds,
+      priorityIn: filters.priorityIn as never,
+      has: filters.has as never,
+      slaBreached: filters.slaBreached || undefined,
+      unreadOnly: filters.unreadOnly || undefined,
+      readNoReply: filters.readNoReply || undefined,
+      sort: filters.sort as never,
+    }),
+    [filters],
+  );
+
+  function saveView(display: 'sidebar' | 'section') {
     start(async () => {
       const res = await createSavedView({
         name: viewName,
-        filters: {
-          status: filters.status as never,
-          assignee: filters.assignee,
-          inboxId: filters.inboxId,
-          tagIds: filters.tagIds,
-          priorityIn: filters.priorityIn as never,
-          slaBreached: filters.slaBreached || undefined,
-          unreadOnly: filters.unreadOnly || undefined,
-          readNoReply: filters.readNoReply || undefined,
-          sort: filters.sort as never,
-        },
+        display,
+        filters: asViewFilters(),
       });
       if (res.ok) {
-        toast.success(`View "${viewName}" saved to the sidebar`);
+        toast.success(
+          display === 'sidebar'
+            ? `"${viewName}" added to the sidebar`
+            : `"${viewName}" will show as a section in the inbox`,
+        );
         setSaveOpen(false);
         setViewName('');
         router.refresh();
@@ -257,6 +292,54 @@ export function FilterBar({
             {filters.readNoReply && <Check className="h-3.5 w-3.5" />}
           </DropdownMenuItem>
 
+          {teams.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10.5px] uppercase tracking-wide text-muted-foreground">
+                Team
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() => setParam('team', filters.teamId === 'mine' ? null : 'mine')}
+              >
+                <span className="flex-1">My teams</span>
+                {filters.teamId === 'mine' && <Check className="h-3.5 w-3.5" />}
+              </DropdownMenuItem>
+              {teams.map((t) => (
+                <DropdownMenuItem
+                  key={t.id}
+                  onClick={() => setParam('team', filters.teamId === t.id ? null : t.id)}
+                >
+                  <span
+                    className="mr-2 h-2 w-2 rounded-full"
+                    style={{ backgroundColor: t.color }}
+                  />
+                  <span className="flex-1 truncate">{t.name}</span>
+                  {filters.teamId === t.id && <Check className="h-3.5 w-3.5" />}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuItem
+                onClick={() => setParam('team', filters.teamId === 'none' ? null : 'none')}
+              >
+                <span className="flex-1 text-muted-foreground">No team</span>
+                {filters.teamId === 'none' && <Check className="h-3.5 w-3.5" />}
+              </DropdownMenuItem>
+            </>
+          )}
+
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-[10.5px] uppercase tracking-wide text-muted-foreground">
+            Who it&apos;s with
+          </DropdownMenuLabel>
+          {KINDS.map((k) => (
+            <DropdownMenuItem
+              key={k.key}
+              onClick={() => setParam('kind', filters.kind === k.key ? null : k.key)}
+            >
+              <span className="flex-1">{k.label}</span>
+              {filters.kind === k.key && <Check className="h-3.5 w-3.5" />}
+            </DropdownMenuItem>
+          ))}
+
           {inboxes.length > 1 && (
             <>
               <DropdownMenuSeparator />
@@ -319,6 +402,29 @@ export function FilterBar({
             onClear={() => setParam('assignee', null)}
           />
         )}
+        {filters.teamId && (
+          <FilterChip
+            key="team"
+            label={
+              filters.teamId === 'mine'
+                ? 'My teams'
+                : filters.teamId === 'none'
+                  ? 'No team'
+                  : (teamById.get(filters.teamId)?.name ?? 'Team')
+            }
+            onClear={() => setParam('team', null)}
+          />
+        )}
+        {filters.kind && (
+          <FilterChip
+            key="kind"
+            label={kindLabel(filters.kind)}
+            onClear={() => setParam('kind', null)}
+          />
+        )}
+        {filters.bodyContains.map((w) => (
+          <FilterChip key={`w-${w}`} label={`"${w}"`} onClear={() => toggleInList('words', w)} />
+        ))}
         {filters.priorityIn.map((p) => (
           <FilterChip key={`p-${p}`} label={p} onClear={() => toggleInList('priority', p)} />
         ))}
@@ -365,11 +471,12 @@ export function FilterBar({
             className="ml-auto gap-1 text-muted-foreground"
             onClick={() => {
               setViewName('');
+              setDisplay('sidebar');
               setSaveOpen(true);
             }}
           >
             <Save className="h-3.5 w-3.5" />
-            Save view
+            Save as folder
           </Button>
         </>
       )}
@@ -377,20 +484,55 @@ export function FilterBar({
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Save this view</DialogTitle>
+            <DialogTitle>Save as a folder</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 py-1">
+          <div className="space-y-2.5 py-1">
             <Input
               value={viewName}
               onChange={(e) => setViewName(e.target.value)}
-              placeholder="e.g. Breaching SLA"
+              placeholder="e.g. Enterprise clients"
               autoFocus
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && viewName.trim()) saveView();
+                if (e.key === 'Enter' && viewName.trim()) saveView(display);
               }}
             />
+
+            {/* Where it lives. A sidebar row is somewhere you go; a section is
+                something you scroll past — the split-inbox shape. */}
+            <div className="grid grid-cols-2 gap-1.5">
+              {(
+                [
+                  { key: 'sidebar', label: 'Sidebar row', hint: 'A place to navigate to' },
+                  { key: 'section', label: 'Inbox section', hint: 'Grouped in the list' },
+                ] as const
+              ).map((o) => (
+                <button
+                  key={o.key}
+                  type="button"
+                  onClick={() => setDisplay(o.key)}
+                  className={cn(
+                    'rounded-lg border px-2.5 py-2 text-left transition-all active:scale-[0.98]',
+                    display === o.key
+                      ? 'border-brand bg-brand-muted'
+                      : 'hover:border-border-strong hover:bg-accent',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'block text-[12.5px] font-medium',
+                      display === o.key && 'text-brand',
+                    )}
+                  >
+                    {o.label}
+                  </span>
+                  <span className="block text-[10.5px] text-muted-foreground">{o.hint}</span>
+                </button>
+              ))}
+            </div>
+
             <p className="text-[11.5px] text-muted-foreground">
-              Pinned to your sidebar with a live count. {searchParams.size} filter
+              Membership is computed, so it already contains everything that matches — and threads
+              leave on their own when they stop. {searchParams.size} filter
               {searchParams.size === 1 ? '' : 's'} included.
             </p>
           </div>
@@ -398,8 +540,8 @@ export function FilterBar({
             <Button variant="ghost" onClick={() => setSaveOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={saveView} loading={pending} disabled={!viewName.trim()}>
-              Save view
+            <Button onClick={() => saveView(display)} loading={pending} disabled={!viewName.trim()}>
+              Create folder
             </Button>
           </DialogFooter>
         </DialogContent>

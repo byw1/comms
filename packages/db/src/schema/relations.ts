@@ -29,6 +29,8 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
 
 export const teamsRelations = relations(teams, ({ many }) => ({
   members: many(teamMembers),
+  conversations: many(conversations),
+  contacts: many(contacts),
 }));
 
 export const teamMembersRelations = relations(teamMembers, ({ one }) => ({
@@ -45,9 +47,10 @@ export const channelConnectionsRelations = relations(channelConnections, ({ one 
   inbox: one(inboxes, { fields: [channelConnections.inboxId], references: [inboxes.id] }),
 }));
 
-export const contactsRelations = relations(contacts, ({ many }) => ({
+export const contactsRelations = relations(contacts, ({ one, many }) => ({
   identities: many(contactIdentities),
   conversations: many(conversations),
+  ownerTeam: one(teams, { fields: [contacts.ownerTeamId], references: [teams.id] }),
 }));
 
 export const contactIdentitiesRelations = relations(contactIdentities, ({ one }) => ({

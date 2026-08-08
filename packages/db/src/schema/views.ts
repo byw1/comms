@@ -1,15 +1,33 @@
-import { pgTable, text, integer, boolean, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, boolean, jsonb, timestamp, index, pgEnum } from 'drizzle-orm/pg-core';
 import { genId, timestamps } from './_helpers.js';
 import { users } from './auth.js';
+
+/**
+ * Where a folder appears. A sidebar row is navigation you go to; a section is
+ * a header inside the inbox list you scroll past. The second one is what
+ * people mean by "split inbox" — same object, different placement.
+ */
+export const viewDisplay = pgEnum('view_display', ['sidebar', 'section']);
 
 /** The filter set behind a saved view — mirrors the inbox filter bar. */
 export interface ViewFilters {
   status?: 'open' | 'pending' | 'snoozed' | 'closed' | 'drafts' | 'active' | 'all';
   /** A user id, or 'me' / 'unassigned'. */
   assignee?: string;
+  /** A team id, or 'mine' for every team the viewer belongs to. */
+  teamId?: string;
   inboxId?: string;
   tagIds?: string[];
   priorityIn?: Array<'low' | 'normal' | 'high' | 'urgent'>;
+  /** Correspondent class — the split-inbox axis. */
+  kind?: 'person' | 'unknown' | 'automated' | 'otp';
+  /** Conversations containing a photo, any attachment, a voice memo, or a link. */
+  has?: 'photo' | 'attachment' | 'voice' | 'link';
+  /**
+   * Any of these words in the latest message or the title (OR within the
+   * list). Deliberately not the whole archive — see `buildConversationWhere`.
+   */
+  bodyContains?: string[];
   /** Only conversations past (or approaching) their SLA. */
   slaBreached?: boolean;
   unreadOnly?: boolean;
@@ -19,8 +37,14 @@ export interface ViewFilters {
 }
 
 /**
- * A named, saved filter set pinned to the sidebar — the "split inbox" analog.
- * Personal by default; `isShared` promotes it to a team view.
+ * A folder: a named filter with a place to live.
+ *
+ * Membership is COMPUTED, never filed. A folder created today already
+ * contains all the history that matches it, a thread leaves the moment it
+ * stops qualifying, and changing the rule needs no backfill — none of which
+ * is true of the email folders this replaces.
+ *
+ * Personal by default; `isShared` promotes it to a team folder.
  */
 export const savedViews = pgTable(
   'saved_views',
@@ -30,6 +54,7 @@ export const savedViews = pgTable(
     /** Lucide icon name rendered in the sidebar. */
     icon: text('icon').notNull().default('Filter'),
     filters: jsonb('filters').$type<ViewFilters>().notNull().default({}),
+    display: viewDisplay('display').notNull().default('sidebar'),
     isShared: boolean('is_shared').notNull().default(false),
     ownerUserId: text('owner_user_id').references(() => users.id, { onDelete: 'cascade' }),
     sortOrder: integer('sort_order').notNull().default(0),

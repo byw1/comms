@@ -50,7 +50,9 @@ export type MaintenanceJob =
   /** Attach contacts to conversations that never got one from a message handle. */
   | { type: 'repairContacts' }
   /** Scan recent outbound replies for broken promises ("I'll send it Friday"). */
-  | { type: 'nudges' };
+  | { type: 'nudges' }
+  /** One-time: classify conversations that predate the correspondent detector. */
+  | { type: 'classifyExisting' };
 
 /**
  * Background AI work. `precompute` runs on every inbound message so the draft

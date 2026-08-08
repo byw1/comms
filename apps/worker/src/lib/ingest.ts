@@ -1,4 +1,4 @@
-import { getDb, eq, and, isNull } from '@comms/db';
+import { getDb, eq, and, desc, isNull, ne } from '@comms/db';
 import {
   conversations,
   messages,
@@ -10,8 +10,10 @@ import {
   type BBMessage,
   bbDate,
   parseChatGuid,
+  addressFromChatGuid,
   reactionFromAssociatedType,
   isVoiceMemoAttachment,
+  classifyCorrespondent,
   enqueueAttachment,
   enqueueAi,
   publishEvent,
@@ -83,13 +85,28 @@ async function ensureConversation(
   });
   if (found) return { conversation: found, created: false };
 
+  // Client → team routing: the team that owns this contact owns every thread
+  // they ever start. Classifying the client once beats filing each thread.
+  let assignedTeamId: string | null = null;
+  if (contactId) {
+    const contact = await db.query.contacts.findFirst({
+      where: eq(contacts.id, contactId),
+      columns: { ownerTeamId: true },
+    });
+    assignedTeamId = contact?.ownerTeamId ?? null;
+  }
+
   const inserted = await db
     .insert(conversations)
     .values({
       inboxId,
       providerChatGuid: chatGuid,
       contactId,
+      assignedTeamId,
       isGroup: parsed.isGroup,
+      // A brand-new one-to-one thread is by definition from someone we don't
+      // know yet; the classifier refines this as soon as messages land.
+      kind: parsed.isGroup ? 'person' : 'unknown',
       // `||` not `??`: BlueBubbles sends an EMPTY STRING for any chat the user
       // never named, and `'' ?? x` keeps the empty string — which rendered as a
       // blank row all the way through the UI.
@@ -116,6 +133,59 @@ async function ensureConversation(
   });
   if (!existing) throw new Error(`Failed to upsert conversation for ${chatGuid}`);
   return { conversation: existing, created: false };
+}
+
+/**
+ * Re-classify a conversation's correspondent kind after inbound traffic.
+ *
+ * Runs on every inbound message rather than once at creation: a number that
+ * only ever sent codes is an OTP thread, right up until a human uses it, and
+ * the split inbox has to notice the moment that happens. Writes only on an
+ * actual change so the common case costs one comparison.
+ */
+async function reclassifyKind(
+  conversationId: string,
+  conv: typeof conversations.$inferSelect,
+): Promise<void> {
+  const db = getDb();
+
+  const [recent, contact, outbound] = await Promise.all([
+    db
+      .select({ body: messages.body })
+      .from(messages)
+      .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, 'inbound')))
+      .orderBy(desc(messages.createdAt))
+      .limit(5),
+    conv.contactId
+      ? db.query.contacts.findFirst({
+          where: eq(contacts.id, conv.contactId),
+          columns: { displayName: true },
+        })
+      : Promise.resolve(null),
+    db.query.messages.findFirst({
+      where: and(
+        eq(messages.conversationId, conversationId),
+        eq(messages.direction, 'outbound'),
+        eq(messages.isPrivateNote, false),
+        // System events are ours but not a reply — "Assigned to X" must not
+        // make an OTP thread look like a conversation.
+        ne(messages.authorType, 'system'),
+      ),
+      columns: { id: true },
+    }),
+  ]);
+
+  const kind = classifyCorrespondent({
+    address: addressFromChatGuid(conv.providerChatGuid),
+    hasContactName: Boolean(contact?.displayName?.trim()),
+    inboundBodies: recent.map((r) => r.body),
+    hasOutbound: Boolean(outbound),
+    isGroup: conv.isGroup,
+    inboundCount: recent.length,
+  });
+
+  if (kind === conv.kind) return;
+  await db.update(conversations).set({ kind }).where(eq(conversations.id, conversationId));
 }
 
 /** Insert attachment rows (pending) and enqueue downloads to S3. */
@@ -326,6 +396,10 @@ export async function ingestNewMessage(connectionId: string, bb: BBMessage): Pro
 
   // SLA clock / CSAT capture + per-message automations on every inbound message.
   if (isInbound) {
+    // Classify before automations run, so a rule can condition on the kind.
+    await reclassifyKind(conversation.id, conversation).catch((err) =>
+      log.warn({ err: (err as Error).message }, 'kind classification failed'),
+    );
     if (authorContactId && bb.text) {
       await handleOptKeywords(conversation.id, authorContactId, bb.text).catch(() => {});
     }

@@ -7,6 +7,7 @@ import {
   listTags,
   listMacros,
   listInboxes,
+  listAllTeams,
   getConnectionForInbox,
   getPersonContext,
   getThreadMedia,
@@ -47,6 +48,7 @@ export default async function ConversationPage({
     tags,
     macros,
     inboxes,
+    teams,
     connection,
     draft,
     person,
@@ -61,6 +63,7 @@ export default async function ConversationPage({
     listTags(),
     listMacros(),
     listInboxes(),
+    listAllTeams(),
     getConnectionForInbox(conversation.inboxId),
     getMyDraft(conversationId),
     getPersonContext(conversationId, conversation.contactId),
@@ -225,6 +228,7 @@ export default async function ConversationPage({
                       ),
                   inboxName: conversation.inbox?.name ?? 'Inbox',
                   tagIds: conversation.tags?.map((t) => t.tag.id) ?? [],
+                  assignedTeamId: conversation.assignedTeamId,
                 }}
                 person={{
                   name: contactName,
@@ -238,8 +242,12 @@ export default async function ConversationPage({
                   photos: person.photos,
                   photoCount: person.photoCount,
                   isGroup: conversation.isGroup,
+                  contactId: conversation.contactId,
+                  ownerTeamId: conversation.contact?.ownerTeamId ?? null,
+                  teams: teams.map((t) => ({ id: t.id, name: t.name, color: t.color })),
                 }}
                 agents={agents.map((a) => ({ id: a.id, name: a.name, email: a.email }))}
+                teams={teams.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
                 allTags={tags.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
                 ai={ai ? { summary: ai.summary, topic: ai.topic, sentiment: ai.sentiment } : null}
                 sla={{

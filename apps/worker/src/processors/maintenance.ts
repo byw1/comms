@@ -3,6 +3,8 @@ import {
   type MaintenanceJob,
   COMMS_WEBHOOK_EVENTS,
   COMMS_WEBHOOK_VERSION,
+  addressFromChatGuid,
+  classifyCorrespondent,
   describeConnectionError,
   detectCommitment,
   enqueueMaintenance,
@@ -13,9 +15,11 @@ import {
 } from '@comms/core';
 import { repairBlankNames, syncContacts } from '../lib/contacts.js';
 import { backfillParticipants, repairContactlessConversations } from '../lib/participants.js';
-import { getDb, eq, and, lte, inArray, isNotNull, sql } from '@comms/db';
+import { getDb, eq, and, asc, desc, lte, ne, inArray, isNotNull, sql } from '@comms/db';
 import {
+  appSettings,
   channelConnections,
+  contacts,
   conversations,
   inboxes,
   messages,
@@ -27,6 +31,9 @@ import { ingestNewMessage } from '../lib/ingest.js';
 import { checkSlaBreaches } from '../lib/sla.js';
 
 const log = logger.child({ module: 'maintenance' });
+
+/** Marks the one-time correspondent backfill as finished. */
+const KIND_BACKFILL_KEY = 'kind_backfill_done';
 
 /**
  * Notify every admin/owner about a channel transition (down or recovered).
@@ -353,6 +360,116 @@ async function nudgeSweep() {
   }
 }
 
+/**
+ * One-time backfill: classify conversations that existed before the
+ * correspondent detector did.
+ *
+ * Every pre-existing row defaults to `person`, so without this the split
+ * inbox is empty on an established install until new traffic happens to
+ * arrive — a folder called "Verification codes" that contains nothing is
+ * indistinguishable from a broken feature.
+ *
+ * Bulk-loads each page's signals in three queries rather than three per
+ * conversation, and is naturally idempotent: the classifier's escape hatches
+ * (named contact, we replied, group) return `person` for anything already
+ * correct, so a re-run changes nothing.
+ */
+async function classifyExisting() {
+  const db = getDb();
+  const done = await db.query.appSettings.findFirst({
+    where: eq(appSettings.key, KIND_BACKFILL_KEY),
+  });
+  if (done?.value) return;
+
+  const PAGE = 200;
+  let offset = 0;
+  let updated = 0;
+
+  for (;;) {
+    const page = await db.query.conversations.findMany({
+      columns: {
+        id: true,
+        providerChatGuid: true,
+        isGroup: true,
+        kind: true,
+        contactId: true,
+      },
+      orderBy: [asc(conversations.createdAt)],
+      limit: PAGE,
+      offset,
+    });
+    if (page.length === 0) break;
+    offset += page.length;
+
+    const ids = page.map((c) => c.id);
+
+    // Three bulk queries for the whole page: recent inbound bodies, which
+    // conversations we have replied in, and which contacts have names.
+    const [inbound, replied, named] = await Promise.all([
+      db
+        .select({
+          conversationId: messages.conversationId,
+          body: messages.body,
+          createdAt: messages.createdAt,
+        })
+        .from(messages)
+        .where(and(inArray(messages.conversationId, ids), eq(messages.direction, 'inbound')))
+        .orderBy(desc(messages.createdAt))
+        .limit(ids.length * 8),
+      db
+        .selectDistinct({ conversationId: messages.conversationId })
+        .from(messages)
+        .where(
+          and(
+            inArray(messages.conversationId, ids),
+            eq(messages.direction, 'outbound'),
+            eq(messages.isPrivateNote, false),
+            ne(messages.authorType, 'system'),
+          ),
+        ),
+      db
+        .select({ id: contacts.id, displayName: contacts.displayName })
+        .from(contacts)
+        .where(
+          inArray(
+            contacts.id,
+            page.map((c) => c.contactId).filter((v): v is string => Boolean(v)),
+          ),
+        ),
+    ]);
+
+    const bodiesBy = new Map<string, string[]>();
+    for (const m of inbound) {
+      const list = bodiesBy.get(m.conversationId) ?? [];
+      if (list.length < 5) list.push(m.body ?? '');
+      bodiesBy.set(m.conversationId, list);
+    }
+    const repliedIn = new Set(replied.map((r) => r.conversationId));
+    const nameById = new Map(named.map((n) => [n.id, n.displayName]));
+
+    for (const c of page) {
+      const kind = classifyCorrespondent({
+        address: addressFromChatGuid(c.providerChatGuid),
+        hasContactName: Boolean(c.contactId && nameById.get(c.contactId)?.trim()),
+        inboundBodies: bodiesBy.get(c.id) ?? [],
+        hasOutbound: repliedIn.has(c.id),
+        isGroup: c.isGroup,
+      });
+      if (kind === c.kind) continue;
+      await db.update(conversations).set({ kind }).where(eq(conversations.id, c.id));
+      updated += 1;
+    }
+
+    if (page.length < PAGE) break;
+  }
+
+  await db
+    .insert(appSettings)
+    .values({ key: KIND_BACKFILL_KEY, value: true })
+    .onConflictDoUpdate({ target: appSettings.key, set: { value: true } });
+  log.info({ updated }, 'classified pre-existing conversations');
+}
+
 async function unsnooze() {
   const db = getDb();
   const due = await db
@@ -459,5 +576,7 @@ export async function processMaintenance(job: Job<MaintenanceJob>): Promise<void
       return;
     case 'nudges':
       return nudgeSweep();
+    case 'classifyExisting':
+      return classifyExisting();
   }
 }

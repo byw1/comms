@@ -26,6 +26,23 @@ export const conversationStatus = pgEnum('conversation_status', [
 
 export const priority = pgEnum('priority', ['low', 'normal', 'high', 'urgent']);
 
+/**
+ * What KIND of correspondent this thread is with — the axis a split inbox
+ * divides on. Detected from traffic rather than declared: a business number
+ * receives far more verification codes and delivery notices than it does
+ * customers, and mixing those into one list is what makes the list useless.
+ */
+export const conversationKind = pgEnum('conversation_kind', [
+  /** A named human we have context on. The default, and the only one that matters. */
+  'person',
+  /** Nobody we know yet. Feeds the screener. */
+  'unknown',
+  /** One-way machine traffic: delivery notices, appointment reminders, alerts. */
+  'automated',
+  /** Verification / 2FA codes. Read once, never replied to, disposable. */
+  'otp',
+]);
+
 export const messageDirection = pgEnum('message_direction', ['inbound', 'outbound']);
 
 export const messageAuthorType = pgEnum('message_author_type', [

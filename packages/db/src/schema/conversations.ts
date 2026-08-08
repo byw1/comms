@@ -10,7 +10,7 @@ import {
   index,
 } from 'drizzle-orm/pg-core';
 import { genId, timestamps } from './_helpers.js';
-import { channelType, conversationStatus, priority } from './enums.js';
+import { channelType, conversationKind, conversationStatus, priority } from './enums.js';
 import { inboxes } from './inboxes.js';
 import { contacts, contactIdentities } from './contacts.js';
 import { users } from './auth.js';
@@ -72,6 +72,12 @@ export const conversations = pgTable(
     mutedAt: timestamp('muted_at', { withTimezone: true }),
     /** AI-assigned bundle (see `bundles`). Null = not grouped. */
     bundleId: text('bundle_id').references(() => bundles.id, { onDelete: 'set null' }),
+    /**
+     * Correspondent class, re-evaluated on inbound traffic. Drives the split
+     * inbox and the OTP affordances; never blocks anything, because a
+     * misclassified customer must still be reachable.
+     */
+    kind: conversationKind('kind').notNull().default('person'),
 
     // Activity denormalizations for fast list rendering
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
@@ -95,6 +101,9 @@ export const conversations = pgTable(
     index('conversations_status_idx').on(c.status),
     index('conversations_assignee_idx').on(c.assigneeId),
     index('conversations_last_message_idx').on(c.lastMessageAt),
+    // Both are folder axes, queried on every list render and every count.
+    index('conversations_team_idx').on(c.assignedTeamId),
+    index('conversations_kind_idx').on(c.kind),
   ],
 );
 

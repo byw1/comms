@@ -19,6 +19,8 @@ export interface AutomationConditions {
   priorityIn?: Array<'low' | 'normal' | 'high' | 'urgent'>;
   /** Only the contact's very first conversation with us, or only returning contacts. */
   contactIs?: 'first_time' | 'returning';
+  /** Correspondent class, as detected from traffic (see `conversationKind`). */
+  kindIn?: Array<'person' | 'unknown' | 'automated' | 'otp'>;
   /** Inside or outside the workspace business hours (see app_settings 'business_hours'). */
   businessHours?: 'inside' | 'outside';
 }
@@ -30,6 +32,12 @@ export interface AutomationActions extends ConversationActions {
   snoozeMinutes?: number;
   /** Override the first/next response SLA for this conversation, in minutes. */
   slaMinutes?: number;
+  /**
+   * Silence the thread permanently (no unread, no notifications) without
+   * moving it. The rule form of the mute button — for the automated traffic
+   * you never want to be told about.
+   */
+  mute?: boolean;
 }
 
 /**

@@ -15,7 +15,8 @@ const PERSONAL = [
 const ADMIN = [
   { href: '/settings/workspace', label: 'Workspace' },
   { href: '/settings/inboxes', label: 'Inboxes & Channels' },
-  { href: '/settings/team', label: 'Team' },
+  { href: '/settings/team', label: 'People' },
+  { href: '/settings/teams', label: 'Teams' },
   { href: '/settings/tags', label: 'Tags' },
   { href: '/settings/macros', label: 'Macros' },
   { href: '/settings/automations', label: 'Automations' },

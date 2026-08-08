@@ -22,20 +22,61 @@ export async function createSavedView(input: {
   icon?: string;
   filters: ViewFilters;
   isShared?: boolean;
+  /** 'sidebar' is a nav row; 'section' is a header inside the inbox list. */
+  display?: 'sidebar' | 'section';
 }): Promise<ViewResult> {
   const user = await requireUser();
   const name = input.name.trim();
-  if (!name) return { ok: false, error: 'Give the view a name.' };
+  if (!name) return { ok: false, error: 'Give the folder a name.' };
 
   await db.insert(savedViews).values({
     name,
     icon: input.icon ?? 'Filter',
     filters: input.filters,
+    display: input.display ?? 'sidebar',
     isShared: Boolean(input.isShared),
     ownerUserId: user.id,
   });
   revalidatePath('/inbox');
   revalidatePath('/settings/views');
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+/**
+ * Move a folder between the sidebar and the inbox list, or rename it. The
+ * same object either way — "split inbox" is just `display: 'section'`.
+ */
+export async function updateSavedView(input: {
+  id: string;
+  name?: string;
+  icon?: string;
+  display?: 'sidebar' | 'section';
+  filters?: ViewFilters;
+  isShared?: boolean;
+  sortOrder?: number;
+}): Promise<ViewResult> {
+  const user = await requireUser();
+  const view = await db.query.savedViews.findFirst({ where: eq(savedViews.id, input.id) });
+  if (!view) return { ok: false, error: 'Folder not found.' };
+  if (view.ownerUserId !== user.id) await requireAdmin();
+
+  const patch: Partial<typeof savedViews.$inferInsert> = {};
+  if (input.name !== undefined) {
+    const name = input.name.trim();
+    if (!name) return { ok: false, error: 'Give the folder a name.' };
+    patch.name = name;
+  }
+  if (input.icon !== undefined) patch.icon = input.icon;
+  if (input.display !== undefined) patch.display = input.display;
+  if (input.filters !== undefined) patch.filters = input.filters;
+  if (input.isShared !== undefined) patch.isShared = input.isShared;
+  if (input.sortOrder !== undefined) patch.sortOrder = input.sortOrder;
+  if (Object.keys(patch).length === 0) return { ok: true };
+
+  await db.update(savedViews).set(patch).where(eq(savedViews.id, input.id));
+  revalidatePath('/inbox');
+  revalidatePath('/', 'layout');
   return { ok: true };
 }
 

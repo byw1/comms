@@ -4,8 +4,10 @@ import {
   listInboxes,
   listUnhealthyConnections,
   listSavedViews,
+  listMyTeamsWithCounts,
   listTags,
 } from '@/server/queries';
+import { myTeamIds } from '@/server/actions/teams';
 import { Sidebar } from '@/components/app/sidebar';
 import { RealtimeProvider } from '@/components/app/realtime-provider';
 import { ChannelHealthBanner } from '@/components/app/channel-health-banner';
@@ -23,26 +25,39 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Read the row rather than the JWT: the token snapshots name/image/role at
   // sign-in, so a profile edit would otherwise not show up until the next login.
   const user = await requireDbUser();
-  const [counts, inboxRows, unhealthy, viewRows, tagRows, pending] = await Promise.all([
+  // Folder counts can filter on "my teams", so memberships are resolved first.
+  const myTeams = await myTeamIds();
+  const [counts, inboxRows, unhealthy, viewRows, teamRows, tagRows, pending] = await Promise.all([
     inboxCounts(user.id),
     listInboxes(),
     listUnhealthyConnections(),
-    listSavedViews(user.id),
+    listSavedViews(user.id, myTeams),
+    listMyTeamsWithCounts(user.id),
     listTags(),
     pendingCount(),
   ]);
 
-  /** Turn a saved view's stored filters back into an inbox URL. */
+  /**
+   * Turn a folder's stored filters back into an inbox URL. Every field the
+   * filter bar understands has to appear here, or clicking the folder shows a
+   * different set than its badge counted.
+   */
   const viewHref = (f: Record<string, unknown>) => {
     const p = new URLSearchParams();
     if (f.status && f.status !== 'active') p.set('status', String(f.status));
     if (f.assignee) p.set('assignee', String(f.assignee));
+    if (f.teamId) p.set('team', String(f.teamId));
+    if (f.kind) p.set('kind', String(f.kind));
+    if (f.has) p.set('has', String(f.has));
+    if (Array.isArray(f.bodyContains) && f.bodyContains.length)
+      p.set('words', f.bodyContains.join(','));
     if (f.inboxId) p.set('inbox', String(f.inboxId));
     if (Array.isArray(f.tagIds) && f.tagIds.length) p.set('tags', f.tagIds.join(','));
     if (Array.isArray(f.priorityIn) && f.priorityIn.length)
       p.set('priority', f.priorityIn.join(','));
     if (f.slaBreached) p.set('sla', 'breached');
     if (f.unreadOnly) p.set('unread', '1');
+    if (f.readNoReply) p.set('seen', '1');
     if (f.sort && f.sort !== 'newest') p.set('sort', String(f.sort));
     const qs = p.toString();
     return qs ? `/inbox?${qs}` : '/inbox';
@@ -69,12 +84,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               user={{ name: user.name, email: user.email, image: user.image }}
               counts={{ ...counts, pending }}
               inboxes={inboxList}
-              views={viewRows.map((v) => ({
-                id: v.id,
-                name: v.name,
-                href: viewHref(v.filters as Record<string, unknown>),
-                count: v.count,
-              }))}
+              teams={teamRows}
+              views={viewRows
+                // Section folders live inside the list, not in the sidebar.
+                .filter((v) => v.display === 'sidebar')
+                .map((v) => ({
+                  id: v.id,
+                  name: v.name,
+                  href: viewHref(v.filters as Record<string, unknown>),
+                  count: v.count,
+                }))}
             />
           </SidebarShell>
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>

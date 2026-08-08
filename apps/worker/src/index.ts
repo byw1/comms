@@ -115,7 +115,10 @@ async function main() {
   // Data left broken by earlier bugs is repaired on boot rather than at the
   // next contact sync — an hour of rows labelled "Unknown contact" is an hour
   // too many, and both repairs are no-ops once the data is clean.
-  for (const type of ['repairNames', 'repairContacts'] as const) {
+  // `classifyExisting` is the same idea for the split inbox: without it an
+  // established install shows every old thread as a person until new traffic
+  // arrives. It self-disables once complete.
+  for (const type of ['repairNames', 'repairContacts', 'classifyExisting'] as const) {
     await enqueueMaintenance({ type }).catch((err) =>
       log.warn({ err: (err as Error).message, type }, 'could not enqueue repair'),
     );

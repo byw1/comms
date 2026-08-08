@@ -14,6 +14,8 @@ import {
   macros,
   automationRules,
   savedViews,
+  teams,
+  teamMembers,
 } from '@comms/db';
 import { db } from '@/server/db';
 import { INBOX_STATUSES } from '@/lib/conversation-folder';
@@ -29,6 +31,17 @@ export type ConversationFilter = {
    */
   status?: 'open' | 'pending' | 'snoozed' | 'closed' | 'drafts' | 'active' | 'all';
   assignee?: 'me' | 'unassigned' | string;
+  /**
+   * A team id, `'mine'` for every team the viewer belongs to, or `'none'` for
+   * conversations no team owns.
+   */
+  teamId?: 'mine' | 'none' | string;
+  /** Team ids the viewer belongs to — required to resolve `teamId: 'mine'`. */
+  myTeamIds?: string[];
+  /** Correspondent class — the split-inbox axis. */
+  kind?: 'person' | 'unknown' | 'automated' | 'otp';
+  /** Any of these words appearing in a message body (OR within the list). */
+  bodyContains?: string[];
   inboxId?: string;
   tagIds?: string[];
   priorityIn?: Array<'low' | 'normal' | 'high' | 'urgent'>;
@@ -109,6 +122,11 @@ function hasMediaCondition(kind: 'photo' | 'attachment' | 'voice' | 'link') {
   )`;
 }
 
+/** Escape LIKE metacharacters so a stored word matches literally. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 /** SQL conditions shared by the list query and the per-view counts. */
 function buildConversationWhere(filter: ConversationFilter) {
   const where = [];
@@ -143,6 +161,49 @@ function buildConversationWhere(filter: ConversationFilter) {
 
   if (filter.priorityIn?.length) {
     where.push(inArray(conversations.priority, filter.priorityIn));
+  }
+
+  // Team routing. 'mine' with no memberships must match NOTHING rather than
+  // everything — the same trap the drafts folder has, and the same fix.
+  if (filter.teamId === 'none') {
+    where.push(isNull(conversations.assignedTeamId));
+  } else if (filter.teamId === 'mine') {
+    where.push(
+      filter.myTeamIds?.length
+        ? inArray(conversations.assignedTeamId, filter.myTeamIds)
+        : sql`false`,
+    );
+  } else if (filter.teamId) {
+    where.push(eq(conversations.assignedTeamId, filter.teamId));
+  }
+
+  if (filter.kind) where.push(eq(conversations.kind, filter.kind));
+
+  if (filter.bodyContains?.length) {
+    const words = filter.bodyContains.map((w) => w.trim()).filter(Boolean);
+    if (words.length) {
+      /**
+       * Matched against the latest message and the title, NOT every message
+       * ever sent.
+       *
+       * Searching the whole archive would be more powerful and would make the
+       * folder lie: the list pane filters the loaded working set client-side
+       * and can only see each row's preview, so a badge counted over all
+       * messages would promise threads the list then couldn't show. A folder
+       * whose count disagrees with its contents is worse than a folder with a
+       * shallower rule — and the full-archive search already exists in the
+       * search box and in Ask.
+       *
+       * OR within the list: "invoice OR receipt OR billing" is one folder.
+       */
+      const clauses = words.map((w) => {
+        // A saved word is a literal, so `%` and `_` must not act as wildcards
+        // — "50%" should find "50%", not everything containing "50".
+        const like = `%${escapeLike(w)}%`;
+        return sql`(${conversations.lastMessagePreview} ilike ${like} escape '\\' or ${conversations.title} ilike ${like} escape '\\')`;
+      });
+      where.push(sql`(${sql.join(clauses, sql` or `)})`);
+    }
   }
 
   if (filter.readNoReply) where.push(READ_NO_REPLY);
@@ -217,6 +278,7 @@ export async function listConversations(filter: ConversationFilter = {}) {
       inbox: { columns: { id: true, name: true, color: true } },
       tags: { with: { tag: true } },
       bundle: { columns: { id: true, name: true } },
+      assignedTeam: { columns: { id: true, name: true, color: true } },
     },
   });
 }
@@ -231,8 +293,8 @@ export async function countConversations(filter: ConversationFilter): Promise<nu
   return Number(row?.n ?? 0);
 }
 
-/** Saved views visible to a user: their own plus every shared one. */
-export async function listSavedViews(userId: string) {
+/** Saved views (folders) visible to a user: their own plus every shared one. */
+export async function listSavedViews(userId: string, myTeamIds: string[] = []) {
   const rows = await db.query.savedViews.findMany({
     where: or(eq(savedViews.ownerUserId, userId), eq(savedViews.isShared, true)),
     orderBy: [asc(savedViews.sortOrder), asc(savedViews.createdAt)],
@@ -241,7 +303,7 @@ export async function listSavedViews(userId: string) {
   return Promise.all(
     rows.map(async (v) => ({
       ...v,
-      count: await countConversations({ ...v.filters, currentUserId: userId }),
+      count: await countConversations({ ...v.filters, currentUserId: userId, myTeamIds }),
     })),
   );
 }
@@ -252,12 +314,18 @@ export async function getConversation(id: string) {
   return db.query.conversations.findFirst({
     where: eq(conversations.id, id),
     with: {
-      contact: { with: { identities: true } },
+      contact: { with: { identities: true, ownerTeam: { columns: { id: true, name: true } } } },
       assignee: { columns: { id: true, name: true, image: true } },
       inbox: { columns: { id: true, name: true, color: true } },
       tags: { with: { tag: true } },
+      assignedTeam: { columns: { id: true, name: true, color: true } },
     },
   });
+}
+
+/** Every team, for pickers. Cheap and small — teams are a handful of rows. */
+export async function listAllTeams() {
+  return db.query.teams.findMany({ orderBy: [asc(teams.name)] });
 }
 
 export async function getMessages(conversationId: string) {
@@ -331,6 +399,30 @@ export async function inboxCounts(currentUserId: string) {
     drafts: Number(row?.drafts ?? 0),
     closed: Number(row?.closed ?? 0),
   };
+}
+
+/**
+ * The teams a user belongs to, with a live count of the open work routed to
+ * each. Only their own teams: a sidebar listing every team in the workspace
+ * is an org chart, not a work queue.
+ */
+export async function listMyTeamsWithCounts(userId: string) {
+  const rows = await db
+    .select({
+      id: teams.id,
+      name: teams.name,
+      color: teams.color,
+      open: sql<number>`(
+        select count(*) from ${conversations} c
+        where c.assigned_team_id = ${teams.id} and c.status in ('open','pending')
+      )`,
+    })
+    .from(teams)
+    .innerJoin(teamMembers, eq(teamMembers.teamId, teams.id))
+    .where(eq(teamMembers.userId, userId))
+    .orderBy(asc(teams.name));
+
+  return rows.map((r) => ({ ...r, open: Number(r.open) }));
 }
 
 /**

@@ -1,4 +1,10 @@
-import { listAutomationRules, listAgents, listTags, listInboxes } from '@/server/queries';
+import {
+  listAutomationRules,
+  listAgents,
+  listTags,
+  listInboxes,
+  listAllTeams,
+} from '@/server/queries';
 import { AutomationManager } from '@/components/settings/automation-manager';
 import { BusinessHoursForm } from '@/components/settings/business-hours-form';
 import { getBusinessHoursSetting } from '@/server/actions/automations';
@@ -6,11 +12,12 @@ import { getBusinessHoursSetting } from '@/server/actions/automations';
 export const dynamic = 'force-dynamic';
 
 export default async function AutomationsSettingsPage() {
-  const [rules, agents, tags, inboxRows, hours] = await Promise.all([
+  const [rules, agents, tags, inboxRows, teamRows, hours] = await Promise.all([
     listAutomationRules(),
     listAgents(),
     listTags(),
     listInboxes(),
+    listAllTeams(),
     getBusinessHoursSetting(),
   ]);
 
@@ -40,6 +47,7 @@ export default async function AutomationsSettingsPage() {
         agents={agents.map((a) => ({ id: a.id, name: a.name, email: a.email }))}
         allTags={tags.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
         inboxes={inboxRows.map((i) => ({ id: i.id, name: i.name }))}
+        teams={teamRows.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
       />
 
       <div className="border-t pt-5">

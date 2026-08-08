@@ -16,6 +16,10 @@ import {
   Boxes,
   ChevronDown,
   Crosshair,
+  Folder as FolderIcon,
+  KeyRound,
+  Copy,
+  UsersRound,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
@@ -23,6 +27,9 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { AnimatePresence, motion } from '@/components/ui/motion';
+// Subpath import, not the barrel: the barrel pulls BullMQ and ioredis, which
+// cannot be bundled for the browser.
+import { extractOtpCode } from '@comms/core/correspondent';
 import { bulkUpdateConversations } from '@/server/actions/inbox';
 import { dissolveBundle, restoreBundle } from '@/server/actions/bundles';
 import { undoToast } from '@/lib/undo';
@@ -42,6 +49,52 @@ const PRIORITY_SPINE: Record<string, string> = {
   low: 'bg-transparent',
 };
 
+/**
+ * A folder's stored filters, as the list evaluates them client-side.
+ *
+ * Every membership key in `ViewFilters` must appear here AND in
+ * `SECTION_KEYS` below. An unhandled key is not "no match", it is "no
+ * restriction" — a folder filtered on something the predicate skips silently
+ * claims the entire inbox and renders it under one header.
+ */
+export type SectionFilters = {
+  teamId?: string;
+  kind?: string;
+  tagIds?: string[];
+  inboxId?: string;
+  assignee?: string;
+  priorityIn?: string[];
+  unreadOnly?: boolean;
+  readNoReply?: boolean;
+  status?: string;
+  has?: string;
+  bodyContains?: string[];
+  slaBreached?: boolean;
+  /** Ordering, not membership — present in stored filters, ignored here. */
+  sort?: string;
+};
+
+/**
+ * Keys the section predicate actually implements. Anything stored outside
+ * this set makes the folder un-renderable as a section, and it is skipped
+ * rather than shown wrong — see `folderSections`.
+ */
+const SECTION_KEYS = new Set([
+  'teamId',
+  'kind',
+  'tagIds',
+  'inboxId',
+  'assignee',
+  'priorityIn',
+  'unreadOnly',
+  'readNoReply',
+  'status',
+  'has',
+  'bodyContains',
+  'slaBreached',
+  'sort',
+]);
+
 export function ConversationListPane({
   conversations,
   currentUserId,
@@ -49,6 +102,9 @@ export function ConversationListPane({
   allTags = [],
   agents = [],
   inboxes = [],
+  teams = [],
+  myTeamIds = [],
+  folders = [],
   draftConversationIds = [],
 }: {
   conversations: ConversationListItem[];
@@ -61,6 +117,11 @@ export function ConversationListPane({
   allTags?: { id: string; name: string; color: string }[];
   agents?: { id: string; name: string | null; email: string }[];
   inboxes?: { id: string; name: string }[];
+  teams?: { id: string; name: string; color: string }[];
+  /** Teams the signed-in user is on, for the `team=mine` filter. */
+  myTeamIds?: string[];
+  /** Folders set to render as sections inside this list (the split inbox). */
+  folders?: { id: string; name: string; filters: SectionFilters }[];
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -117,6 +178,9 @@ export function ConversationListPane({
   const assignee = searchParams.get('assignee');
   const statusFilter = searchParams.get('status') ?? 'active';
   const inboxFilter = searchParams.get('inbox');
+  const teamFilter = searchParams.get('team');
+  const kindFilter = searchParams.get('kind');
+  const wordsFilter = searchParams.get('words')?.split(',').filter(Boolean) ?? [];
   const tagFilter = searchParams.get('tags')?.split(',').filter(Boolean) ?? [];
   const priorityFilter = searchParams.get('priority')?.split(',').filter(Boolean) ?? [];
   const slaFilter = searchParams.get('sla') === 'breached';
@@ -131,8 +195,23 @@ export function ConversationListPane({
   // counts come from SQL, which is what keeps them accurate beyond this window.
   const filtered = useMemo(() => {
     const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
+    const myTeams = new Set(myTeamIds);
     const rows = conversations.filter((c) => {
       if (inboxFilter && c.inboxId !== inboxFilter) return false;
+      // Team routing mirrors the SQL exactly: 'mine' with no memberships
+      // matches nothing, not everything.
+      if (teamFilter === 'none' && c.assignedTeamId) return false;
+      if (teamFilter === 'mine' && !(c.assignedTeamId && myTeams.has(c.assignedTeamId)))
+        return false;
+      if (teamFilter && teamFilter !== 'mine' && teamFilter !== 'none' && c.assignedTeamId !== teamFilter)
+        return false;
+      if (kindFilter && c.kind !== kindFilter) return false;
+      // Same rule as the SQL in buildConversationWhere — preview + title, so
+      // a folder's badge count and its visible rows can never disagree.
+      if (wordsFilter.length) {
+        const hay = `${c.lastMessagePreview ?? ''} ${c.title ?? ''}`.toLowerCase();
+        if (!wordsFilter.some((w) => hay.includes(w.toLowerCase()))) return false;
+      }
       if (assignee === 'me' && c.assigneeId !== currentUserId) return false;
       if (assignee === 'unassigned' && c.assigneeId) return false;
       if (assignee && assignee !== 'me' && assignee !== 'unassigned' && c.assigneeId !== assignee)
@@ -195,6 +274,10 @@ export function ConversationListPane({
     assignee,
     statusFilter,
     inboxFilter,
+    teamFilter,
+    kindFilter,
+    wordsFilter.join(','),
+    myTeamIds.join(','),
     query,
     currentUserId,
     // Arrays are rebuilt each render; compare by value to avoid a render loop.
@@ -217,10 +300,92 @@ export function ConversationListPane({
   }, []);
 
   const canGroup = statusFilter === 'active' && !query;
+
+  /**
+   * Folder sections — the split inbox.
+   *
+   * Evaluated against the already-filtered rows so a section can never show
+   * something the current filter excludes, and each row lands in the FIRST
+   * folder that claims it: a thread appearing under two headers reads as a
+   * duplicate, not as two memberships.
+   */
+  const folderSections = useMemo(() => {
+    if (!canGroup || folders.length === 0) return [];
+    const myTeams = new Set(myTeamIds);
+    const claimed = new Set<string>();
+    const out: { id: string; name: string; rows: typeof filtered }[] = [];
+
+    for (const folder of folders) {
+      const f = folder.filters ?? {};
+
+      // Fail closed. A key the predicate cannot evaluate would otherwise be
+      // treated as no restriction, and the folder would swallow the inbox.
+      const unhandled = Object.entries(f).filter(
+        ([k, v]) => !SECTION_KEYS.has(k) && v !== undefined && v !== null,
+      );
+      if (unhandled.length > 0) continue;
+
+      const rows = filtered.filter((c) => {
+        if (claimed.has(c.id)) return false;
+        if (f.kind && c.kind !== f.kind) return false;
+        if (f.inboxId && c.inboxId !== f.inboxId) return false;
+        if (f.teamId === 'none' && c.assignedTeamId) return false;
+        if (f.teamId === 'mine' && !(c.assignedTeamId && myTeams.has(c.assignedTeamId)))
+          return false;
+        if (f.teamId && f.teamId !== 'mine' && f.teamId !== 'none' && c.assignedTeamId !== f.teamId)
+          return false;
+        if (f.assignee === 'me' && c.assigneeId !== currentUserId) return false;
+        else if (f.assignee === 'unassigned' && c.assigneeId) return false;
+        // A folder can name a specific teammate, not just me/unassigned.
+        else if (f.assignee && f.assignee !== 'me' && f.assignee !== 'unassigned') {
+          if (c.assigneeId !== f.assignee) return false;
+        }
+        if (f.priorityIn?.length && !f.priorityIn.includes(c.priority)) return false;
+        if (f.unreadOnly && c.unreadCount === 0) return false;
+        if (f.readNoReply && !c.readNoReply) return false;
+        if (f.slaBreached && !c.slaBreachedAt) return false;
+        // Folders default to the inbox; a stored status narrows further.
+        if (f.status && !matchesFolder(c.status, f.status, draftIds.has(c.id))) return false;
+        if (f.has) {
+          const present =
+            f.has === 'photo'
+              ? c.hasPhoto
+              : f.has === 'voice'
+                ? c.hasVoice
+                : f.has === 'link'
+                  ? c.hasLink
+                  : c.hasAttachment;
+          if (!present) return false;
+        }
+        // Same rule as the SQL: latest message + title.
+        if (f.bodyContains?.length) {
+          const hay = `${c.lastMessagePreview ?? ''} ${c.title ?? ''}`.toLowerCase();
+          if (!f.bodyContains.some((w) => hay.includes(w.toLowerCase()))) return false;
+        }
+        if (f.tagIds?.length) {
+          const ids = new Set(c.tags?.map((t) => t.tag.id) ?? []);
+          if (!f.tagIds.every((id) => ids.has(id))) return false;
+        }
+        return true;
+      });
+      if (rows.length === 0) continue;
+      for (const r of rows) claimed.add(r.id);
+      out.push({ id: folder.id, name: folder.name, rows });
+    }
+    return out;
+  }, [filtered, folders, canGroup, myTeamIds, currentUserId, draftIds]);
+
+  const folderClaimedIds = useMemo(
+    () => new Set(folderSections.flatMap((s) => s.rows.map((r) => r.id))),
+    [folderSections],
+  );
+
   const bundleGroups = useMemo(() => {
     if (!canGroup || !grouping) return [];
     const groups = new Map<string, { id: string; name: string; rows: typeof filtered }>();
     for (const c of filtered) {
+      // An explicit folder outranks an AI guess about the same thread.
+      if (folderClaimedIds.has(c.id)) continue;
       if (!c.bundle) continue;
       const g = groups.get(c.bundle.id) ?? { id: c.bundle.id, name: c.bundle.name, rows: [] };
       g.rows.push(c);
@@ -228,15 +393,18 @@ export function ConversationListPane({
     }
     // A "group" of one is just a row with extra chrome.
     return Array.from(groups.values()).filter((g) => g.rows.length >= 2);
-  }, [filtered, canGroup, grouping]);
+  }, [filtered, canGroup, grouping, folderClaimedIds]);
 
   const bundledIds = useMemo(
     () => new Set(bundleGroups.flatMap((g) => g.rows.map((r) => r.id))),
     [bundleGroups],
   );
   const ungrouped = useMemo(
-    () => (bundleGroups.length ? filtered.filter((c) => !bundledIds.has(c.id)) : filtered),
-    [filtered, bundleGroups, bundledIds],
+    () =>
+      folderSections.length || bundleGroups.length
+        ? filtered.filter((c) => !bundledIds.has(c.id) && !folderClaimedIds.has(c.id))
+        : filtered,
+    [filtered, bundleGroups, bundledIds, folderSections, folderClaimedIds],
   );
 
   function toggleGrouping() {
@@ -277,31 +445,58 @@ export function ConversationListPane({
   // skips rows folded inside a collapsed bundle, so j/k never jumps somewhere
   // invisible.
   useEffect(() => {
-    const order = bundleGroups.length
-      ? [
-          ...bundleGroups.flatMap((g) => (collapsedBundles.has(g.id) ? [] : g.rows.map((r) => r.id))),
-          ...ungrouped.map((c) => c.id),
-        ]
-      : filtered.map((c) => c.id);
+    const order =
+      folderSections.length || bundleGroups.length
+        ? [
+            ...folderSections.flatMap((f) =>
+              collapsedBundles.has(f.id) ? [] : f.rows.map((r) => r.id),
+            ),
+            ...bundleGroups.flatMap((g) =>
+              collapsedBundles.has(g.id) ? [] : g.rows.map((r) => r.id),
+            ),
+            ...ungrouped.map((c) => c.id),
+          ]
+        : filtered.map((c) => c.id);
     setVisibleConversationIds(order);
-  }, [filtered, bundleGroups, ungrouped, collapsedBundles]);
+  }, [filtered, folderSections, bundleGroups, ungrouped, collapsedBundles]);
 
   /** Selection mode: once anything is picked, every row offers its checkbox. */
   const selecting = selected.size > 0;
 
-  /** Display sections: bundle groups first, then everything else. */
-  const sections = useMemo(() => {
-    if (bundleGroups.length === 0) {
-      return [{ key: 'all', bundle: null as { id: string; name: string } | null, rows: filtered }];
+  /**
+   * Display sections, in order: folders you defined, then bundles the AI
+   * guessed, then everything else. Explicit beats inferred.
+   */
+  type Section = {
+    key: string;
+    /** Present for AI bundles — they carry a dissolve affordance. */
+    bundle: { id: string; name: string } | null;
+    /** Present for folders — a plain header. */
+    folder: { id: string; name: string } | null;
+    rows: typeof filtered;
+  };
+
+  const sections = useMemo<Section[]>(() => {
+    if (folderSections.length === 0 && bundleGroups.length === 0) {
+      return [{ key: 'all', bundle: null, folder: null, rows: filtered }];
     }
-    const list = bundleGroups.map((g) => ({
-      key: g.id,
-      bundle: { id: g.id, name: g.name } as { id: string; name: string } | null,
-      rows: g.rows,
-    }));
-    if (ungrouped.length) list.push({ key: 'rest', bundle: null, rows: ungrouped });
+    const list: Section[] = [
+      ...folderSections.map((f) => ({
+        key: `folder-${f.id}`,
+        bundle: null,
+        folder: { id: f.id, name: f.name },
+        rows: f.rows,
+      })),
+      ...bundleGroups.map((g) => ({
+        key: g.id,
+        bundle: { id: g.id, name: g.name },
+        folder: null,
+        rows: g.rows,
+      })),
+    ];
+    if (ungrouped.length) list.push({ key: 'rest', bundle: null, folder: null, rows: ungrouped });
     return list;
-  }, [bundleGroups, ungrouped, filtered]);
+  }, [folderSections, bundleGroups, ungrouped, filtered]);
 
   // Drafts earns a tab only when you have one. An always-present empty folder
   // is chrome; one that appears because you left something unsent is a prompt.
@@ -414,7 +609,7 @@ export function ConversationListPane({
         </div>
       </div>
 
-      <FilterBar allTags={allTags} agents={agents} inboxes={inboxes} />
+      <FilterBar allTags={allTags} agents={agents} inboxes={inboxes} teams={teams} />
 
       <AnimatePresence>
         {selected.size > 0 && (
@@ -505,6 +700,37 @@ export function ConversationListPane({
           <div className="space-y-px">
             {sections.map((sec) => (
               <div key={sec.key}>
+                {sec.folder && (
+                  <div className="flex items-center gap-1.5 px-2 pb-0.5 pt-3 first:pt-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCollapsedBundles((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(sec.folder!.id)) next.delete(sec.folder!.id);
+                          else next.add(sec.folder!.id);
+                          return next;
+                        })
+                      }
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                      aria-expanded={!collapsedBundles.has(sec.folder.id)}
+                    >
+                      <ChevronDown
+                        className={cn(
+                          'h-3 w-3 shrink-0 text-muted-foreground/60 transition-transform duration-150',
+                          collapsedBundles.has(sec.folder.id) && '-rotate-90',
+                        )}
+                      />
+                      <FolderIcon className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+                      <span className="type-micro truncate text-muted-foreground">
+                        {sec.folder.name}
+                      </span>
+                      <span className="tabular type-caption shrink-0 text-muted-foreground/60">
+                        {sec.rows.length}
+                      </span>
+                    </button>
+                  </div>
+                )}
                 {sec.bundle && (
                   <div className="group/bundle flex items-center gap-1.5 px-2 pb-0.5 pt-3 first:pt-1">
                     <button
@@ -545,12 +771,12 @@ export function ConversationListPane({
                     </button>
                   </div>
                 )}
-                {!sec.bundle && sec.key === 'rest' && (
+                {sec.key === 'rest' && (
                   <p className="type-micro px-2 pb-0.5 pt-3 text-muted-foreground/60">
                     Everything else
                   </p>
                 )}
-                {(!sec.bundle || !collapsedBundles.has(sec.bundle.id)) &&
+                {!collapsedBundles.has(sec.bundle?.id ?? sec.folder?.id ?? '') &&
                   sec.rows.map((c) => {
               const active = c.id === activeId;
               const isSelected = selected.has(c.id);
@@ -567,6 +793,10 @@ export function ConversationListPane({
               const nudgeMeta = (c.metadata as { nudge?: { dismissedAt?: string } } | null)?.nudge;
               const hasNudge = Boolean(nudgeMeta && !nudgeMeta.dismissedAt);
               const muted = Boolean(c.mutedAt);
+              // Only for threads the classifier called a code — running the
+              // extractor over every preview would find false positives in
+              // order numbers and addresses.
+              const otpCode = c.kind === 'otp' ? extractOtpCode(c.lastMessagePreview) : null;
               const hasMeta =
                 unread ||
                 hasNudge ||
@@ -574,6 +804,7 @@ export function ConversationListPane({
                 Boolean(c.slaBreachedAt) ||
                 Boolean(c.nextResponseDueAt && c.status !== 'closed') ||
                 (c.status !== 'open' && c.status !== 'closed') ||
+                Boolean(c.assignedTeam) ||
                 (showChannels && Boolean(c.inbox)) ||
                 (c.tags?.length ?? 0) > 0;
 
@@ -658,14 +889,34 @@ export function ConversationListPane({
                     {/* Two lines, not one. A single truncated line tells you
                         almost nothing about a text message, and the second line
                         is what lets you triage without opening the thread. */}
+                    {/* An unsent draft outranks everything — it is the thing
+                        you have to deal with. Then the code chip: a
+                        verification code is read once and never replied to,
+                        so copying it here means never opening the thread. */}
                     {draftIds.has(c.id) ? (
-                      // An unsent reply outranks what they last said: it is the
-                      // thing you have to deal with, and the only way to notice
-                      // you left one is for the row to say so.
                       <p className="type-body mt-1 flex items-center gap-1.5 text-muted-foreground">
                         <Pencil className="h-3 w-3 shrink-0 text-warning" />
                         <span className="truncate italic">Draft</span>
                       </p>
+                    ) : otpCode ? (
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void navigator.clipboard
+                              .writeText(otpCode)
+                              .then(() => toast.success(`Copied ${otpCode}`))
+                              .catch(() => toast.error('Could not copy'));
+                          }}
+                          title="Copy code"
+                          className="tabular flex items-center gap-1.5 rounded-md border border-brand/40 bg-brand-muted px-1.5 py-0.5 font-mono text-[12px] font-semibold text-brand transition-colors hover:bg-brand-muted/70"
+                        >
+                          <KeyRound className="h-3 w-3" />
+                          {otpCode}
+                          <Copy className="h-2.5 w-2.5 opacity-60" />
+                        </button>
+                      </div>
                     ) : (
                       <p
                         className={cn(
@@ -723,6 +974,22 @@ export function ConversationListPane({
                               {c.status}
                             </Badge>
                           )
+                        )}
+                        {/* Which team owns this. Shown whenever routed, not
+                            only in multi-team workspaces — "whose is this" is
+                            the question a shared inbox exists to answer. */}
+                        {c.assignedTeam && (
+                          <span
+                            className="type-caption inline-flex items-center gap-1 rounded-md px-1.5 py-px font-medium"
+                            style={{
+                              backgroundColor: `${c.assignedTeam.color}18`,
+                              color: c.assignedTeam.color,
+                            }}
+                            title={`Team: ${c.assignedTeam.name}`}
+                          >
+                            <UsersRound className="h-2.5 w-2.5" />
+                            {c.assignedTeam.name}
+                          </span>
                         )}
                         {showChannels && c.inbox && (
                           <span

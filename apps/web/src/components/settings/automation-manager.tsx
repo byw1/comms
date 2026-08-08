@@ -60,11 +60,13 @@ function describeRule(
   r: Rule,
   agents: { id: string; name: string | null; email: string }[],
   allTags: { id: string; name: string }[],
+  teams: { id: string; name: string }[] = [],
 ): string {
   const conds: string[] = [];
   if (r.conditions.bodyContains?.length)
     conds.push(`contains "${r.conditions.bodyContains.join('", "')}"`);
   if (r.conditions.priorityIn?.length) conds.push(`priority ${r.conditions.priorityIn.join('/')}`);
+  if (r.conditions.kindIn?.length) conds.push(`from ${r.conditions.kindIn.join('/')}`);
   if (r.conditions.contactIs)
     conds.push(r.conditions.contactIs === 'first_time' ? 'first-time contact' : 'returning contact');
   if (r.conditions.businessHours)
@@ -83,8 +85,13 @@ function describeRule(
     const a = agents.find((x) => x.id === r.actions.assignToUserId);
     acts.push(`assign ${a?.name ?? a?.email ?? 'agent'}`);
   }
+  if (r.actions.assignToTeamId) {
+    const t = teams.find((x) => x.id === r.actions.assignToTeamId);
+    acts.push(`route to ${t?.name ?? 'a team'}`);
+  }
   if (r.actions.addTagIds?.length) acts.push(`tag ${r.actions.addTagIds.length}`);
   if (r.actions.autoReply) acts.push('auto-reply');
+  if (r.actions.mute) acts.push('mute');
   if (r.actions.snoozeMinutes) acts.push(`snooze ${r.actions.snoozeMinutes}m`);
   if (r.actions.slaMinutes) acts.push(`SLA ${r.actions.slaMinutes}m`);
 
@@ -96,11 +103,13 @@ export function AutomationManager({
   agents,
   allTags,
   inboxes,
+  teams = [],
 }: {
   rules: Rule[];
   agents: { id: string; name: string | null; email: string }[];
   allTags: { id: string; name: string; color: string }[];
   inboxes: { id: string; name: string }[];
+  teams?: { id: string; name: string; color: string }[];
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -116,9 +125,12 @@ export function AutomationManager({
   const [condPriority, setCondPriority] = useState(ANY);
   const [condContact, setCondContact] = useState(ANY);
   const [condHours, setCondHours] = useState(ANY);
+  const [condKind, setCondKind] = useState(ANY);
   const [setStatus, setSetStatus] = useState(NO_CHANGE);
   const [setPriority, setSetPriority] = useState(NO_CHANGE);
   const [assignee, setAssignee] = useState(NO_CHANGE);
+  const [team, setTeam] = useState(NO_CHANGE);
+  const [mute, setMute] = useState(false);
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [autoReply, setAutoReply] = useState('');
   const [snoozeMinutes, setSnoozeMinutes] = useState('');
@@ -136,9 +148,12 @@ export function AutomationManager({
     setCondPriority(ANY);
     setCondContact(ANY);
     setCondHours(ANY);
+    setCondKind(ANY);
     setSetStatus(NO_CHANGE);
     setSetPriority(NO_CHANGE);
     setAssignee(NO_CHANGE);
+    setTeam(NO_CHANGE);
+    setMute(false);
     setTagIds([]);
     setAutoReply('');
     setSnoozeMinutes('');
@@ -155,6 +170,7 @@ export function AutomationManager({
     if (condPriority !== ANY) conditions.priorityIn = [condPriority as never];
     if (condContact !== ANY) conditions.contactIs = condContact as never;
     if (condHours !== ANY) conditions.businessHours = condHours as never;
+    if (condKind !== ANY) conditions.kindIn = [condKind as never];
 
     const actions: RuleActions = {};
     if (setStatus !== NO_CHANGE) actions.setStatus = setStatus as never;
@@ -162,6 +178,10 @@ export function AutomationManager({
     if (assignee !== NO_CHANGE) {
       actions.assignToUserId = assignee === UNASSIGNED ? null : assignee;
     }
+    if (team !== NO_CHANGE) {
+      actions.assignToTeamId = team === UNASSIGNED ? null : team;
+    }
+    if (mute) actions.mute = true;
     if (tagIds.length) actions.addTagIds = tagIds;
     if (autoReply.trim()) actions.autoReply = autoReply.trim();
     if (snoozeMinutes) actions.snoozeMinutes = Number(snoozeMinutes);
@@ -227,7 +247,7 @@ export function AutomationManager({
                     )}
                   </div>
                   <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-                    {describeRule(r, agents, allTags)}
+                    {describeRule(r, agents, allTags, teams)}
                   </p>
                   {/* Run log — a rule that fires invisibly is a rule nobody trusts. */}
                   <p className="mt-1 text-[11px] text-muted-foreground/80">
@@ -449,6 +469,21 @@ export function AutomationManager({
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1.5">
+                <Label className="text-[12px]">Sender is</Label>
+                <Select value={condKind} onValueChange={setCondKind}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ANY}>Anything</SelectItem>
+                    <SelectItem value="person">A person</SelectItem>
+                    <SelectItem value="unknown">An unknown number</SelectItem>
+                    <SelectItem value="automated">Automated traffic</SelectItem>
+                    <SelectItem value="otp">A verification code</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
@@ -504,6 +539,25 @@ export function AutomationManager({
                   </SelectContent>
                 </Select>
               </div>
+              {teams.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="text-[12px]">Route to team</Label>
+                  <Select value={team} onValueChange={setTeam}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_CHANGE}>No change</SelectItem>
+                      <SelectItem value={UNASSIGNED}>Clear team</SelectItem>
+                      {teams.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label className="text-[12px]">Snooze for (minutes)</Label>
                 <Input
@@ -573,6 +627,11 @@ export function AutomationManager({
               </p>
             </div>
           </div>
+
+          <label className="flex items-center gap-2 text-[12.5px]">
+            <Switch checked={mute} onCheckedChange={setMute} />
+            Mute the conversation — it stays in the list but never notifies
+          </label>
 
           <label className="flex items-center gap-2 text-[12.5px]">
             <Switch checked={stopProcessing} onCheckedChange={setStopProcessing} />
