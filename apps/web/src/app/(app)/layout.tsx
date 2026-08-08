@@ -43,6 +43,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       p.set('priority', f.priorityIn.join(','));
     if (f.slaBreached) p.set('sla', 'breached');
     if (f.unreadOnly) p.set('unread', '1');
+    if (f.readNoReply) p.set('seen', '1');
+    if (f.has) p.set('has', String(f.has));
     if (f.sort && f.sort !== 'newest') p.set('sort', String(f.sort));
     const qs = p.toString();
     return qs ? `/inbox?${qs}` : '/inbox';

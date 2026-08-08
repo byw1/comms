@@ -15,6 +15,8 @@ export interface ViewFilters {
   unreadOnly?: boolean;
   /** They opened your last message and never wrote back. */
   readNoReply?: boolean;
+  /** Conversations containing a photo, attachment, voice memo or link. */
+  has?: 'photo' | 'attachment' | 'voice' | 'link';
   sort?: 'newest' | 'oldest' | 'priority';
 }
 

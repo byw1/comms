@@ -154,6 +154,7 @@ export function FilterBar({
           slaBreached: filters.slaBreached || undefined,
           unreadOnly: filters.unreadOnly || undefined,
           readNoReply: filters.readNoReply || undefined,
+          has: filters.has as never,
           sort: filters.sort as never,
         },
       });
