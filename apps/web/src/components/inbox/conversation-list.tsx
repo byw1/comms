@@ -87,6 +87,7 @@ export function ConversationListPane({
   const slaFilter = searchParams.get('sla') === 'breached';
   const unreadFilter = searchParams.get('unread') === '1';
   const seenFilter = searchParams.get('seen') === '1';
+  const hasFilter = searchParams.get('has');
   const sort = searchParams.get('sort') ?? 'newest';
   const activeId = pathname.startsWith('/inbox/') ? pathname.split('/inbox/')[1] : null;
 
@@ -108,6 +109,17 @@ export function ConversationListPane({
       if (slaFilter && !c.slaBreachedAt) return false;
       if (unreadFilter && c.unreadCount === 0) return false;
       if (seenFilter && !c.readNoReply) return false;
+      if (hasFilter) {
+        const present =
+          hasFilter === 'photo'
+            ? c.hasPhoto
+            : hasFilter === 'voice'
+              ? c.hasVoice
+              : hasFilter === 'link'
+                ? c.hasLink
+                : c.hasAttachment;
+        if (!present) return false;
+      }
       // AND semantics: every selected tag must be present.
       if (tagFilter.length) {
         const ids = new Set(c.tags?.map((t) => t.tag.id) ?? []);
@@ -156,6 +168,7 @@ export function ConversationListPane({
     slaFilter,
     unreadFilter,
     seenFilter,
+    hasFilter,
     sort,
   ]);
 

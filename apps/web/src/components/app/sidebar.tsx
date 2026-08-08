@@ -2,7 +2,18 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Inbox, Users, Settings, Hash, Search, Plus, Filter, Clock, Check } from 'lucide-react';
+import {
+  Inbox,
+  Users,
+  Settings,
+  Hash,
+  Search,
+  Plus,
+  Filter,
+  Clock,
+  Check,
+  Pencil,
+} from 'lucide-react';
 import { Logo } from '@/components/brand';
 import { UserMenu } from '@/components/app/user-menu';
 import { NotificationsBell } from '@/components/app/notifications-bell';
@@ -103,6 +114,7 @@ export function Sidebar({
     unassigned: number;
     snoozed: number;
     closed: number;
+    drafts: number;
   };
   inboxes: { id: string; name: string; color: string; connected: boolean }[];
   views?: { id: string; name: string; href: string; count: number }[];
@@ -120,6 +132,11 @@ export function Sidebar({
     { href: '/inbox', label: 'Inbox', icon: Inbox, count: counts.open },
     { href: '/inbox?assignee=me', label: 'Assigned to me', icon: Users, count: counts.mine },
     { href: '/inbox?assignee=unassigned', label: 'Unassigned', icon: Hash, count: counts.unassigned },
+    // Drafts is listed only when you have one — an empty folder that is always
+    // there is chrome, one that appears is a reminder.
+    ...(counts.drafts > 0
+      ? [{ href: '/inbox?status=drafts', label: 'Drafts', icon: Pencil, count: counts.drafts }]
+      : []),
     { href: '/inbox?status=snoozed', label: 'Snoozed', icon: Clock, count: counts.snoozed },
     { href: '/inbox?status=closed', label: 'Closed', icon: Check },
   ];

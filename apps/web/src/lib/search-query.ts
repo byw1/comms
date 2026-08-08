@@ -16,6 +16,8 @@ export interface ParsedSearch {
     priority?: string[];
     unread?: boolean;
     breaching?: boolean;
+    /** has:photo | has:attachment | has:voice | has:link */
+    has?: 'photo' | 'attachment' | 'voice' | 'link';
   };
   /** Human-readable descriptions of the operators that matched. */
   applied: string[];
@@ -23,6 +25,14 @@ export interface ParsedSearch {
 
 const STATUSES = new Set(['open', 'pending', 'snoozed', 'closed', 'all', 'active']);
 const PRIORITIES = new Set(['low', 'normal', 'high', 'urgent']);
+
+/** `has:` values, with the plurals and synonyms people actually type. */
+const HAS_ALIASES: Record<string, 'photo' | 'attachment' | 'voice' | 'link'> = {
+  photo: 'photo', photos: 'photo', image: 'photo', images: 'photo', pic: 'photo', pics: 'photo',
+  attachment: 'attachment', attachments: 'attachment', file: 'attachment', files: 'attachment',
+  voice: 'voice', audio: 'voice', voicemail: 'voice', memo: 'voice',
+  link: 'link', links: 'link', url: 'link',
+};
 
 export function parseSearchQuery(input: string): ParsedSearch {
   const filters: ParsedSearch['filters'] = { tags: [] };
@@ -61,6 +71,14 @@ export function parseSearchQuery(input: string): ParsedSearch {
           applied.push(`priority: ${value}`);
         } else rest.push(token);
         break;
+      case 'has': {
+        const kind = HAS_ALIASES[value];
+        if (kind) {
+          filters.has = kind;
+          applied.push(`has: ${kind}`);
+        } else rest.push(token);
+        break;
+      }
       case 'is':
         if (value === 'unread') {
           filters.unread = true;
@@ -95,6 +113,7 @@ export function searchFiltersToHref(
   if (parsed.filters.priority?.length) p.set('priority', parsed.filters.priority.join(','));
   if (parsed.filters.unread) p.set('unread', '1');
   if (parsed.filters.breaching) p.set('sla', 'breached');
+  if (parsed.filters.has) p.set('has', parsed.filters.has);
 
   const qs = p.toString();
   return qs ? `/inbox?${qs}` : null;

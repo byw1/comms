@@ -24,6 +24,7 @@ export type KeyActionId =
   | 'conversation.tag'
   | 'compose.new'
   | 'app.search'
+  | 'app.find'
   | 'app.help'
   | 'go.inbox'
   | 'go.mine'
@@ -63,6 +64,12 @@ export const KEY_ACTIONS: readonly KeyActionMeta[] = [
 
   { id: 'compose.new', label: 'New conversation', group: 'Application' },
   { id: 'app.search', label: 'Search / command palette', group: 'Application' },
+  {
+    id: 'app.find',
+    label: 'Find in conversation',
+    group: 'Application',
+    hint: 'Searches the open thread rather than the page',
+  },
   { id: 'app.help', label: 'Keyboard shortcuts', group: 'Application' },
 ] as const;
 
@@ -104,6 +111,7 @@ export const PRESETS: Record<
       'go.closed': ['g c'],
       'compose.new': ['c'],
       'app.search': ['mod+k'],
+      'app.find': ['mod+f'],
       'app.help': ['?'],
     },
   },
@@ -125,6 +133,7 @@ export const PRESETS: Record<
       'go.closed': ['g e'],
       'compose.new': ['c'],
       'app.search': ['mod+k'],
+      'app.find': ['mod+f'],
       'app.help': ['?'],
     },
   },
@@ -147,6 +156,7 @@ export const PRESETS: Record<
       // Gmail searches with `/`. ⌘K stays bound too — it is too universal to
       // take away, and anyone who wants it gone can unbind it here.
       'app.search': ['/', 'mod+k'],
+      'app.find': ['mod+f'],
       'app.help': ['?'],
     },
   },

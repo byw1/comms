@@ -1,7 +1,9 @@
 import 'server-only';
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from '@comms/db';
 import {
+  attachments,
   conversations,
+  drafts,
   conversationTags,
   messages,
   inboxes,
@@ -24,7 +26,7 @@ export type ConversationFilter = {
    * it leaves and comes back, the way it does in every mail client. Each has
    * its own view instead.
    */
-  status?: 'open' | 'pending' | 'snoozed' | 'closed' | 'active' | 'all';
+  status?: 'open' | 'pending' | 'snoozed' | 'closed' | 'drafts' | 'active' | 'all';
   assignee?: 'me' | 'unassigned' | string;
   inboxId?: string;
   tagIds?: string[];
@@ -39,6 +41,8 @@ export type ConversationFilter = {
    * tracking pixels; Apple hands us the real timestamp.
    */
   readNoReply?: boolean;
+  /** Conversations containing a photo, any attachment, a voice memo, or a link. */
+  has?: 'photo' | 'attachment' | 'voice' | 'link';
   sort?: 'newest' | 'oldest' | 'priority';
   search?: string;
   currentUserId?: string;
@@ -67,12 +71,57 @@ const READ_NO_REPLY = sql<boolean>`exists (
     )
 )`;
 
+/**
+ * "Photos from Jordan" — a query people genuinely make and which nothing in
+ * the product could answer.
+ *
+ * Links are matched on the message body rather than on an attachment row,
+ * because a URL in a text is not an attachment; everything else joins to
+ * `attachments`, using `isVoiceMemo` rather than the mime type since
+ * BlueBubbles rewrites mime types during its audio conversion pass.
+ */
+function hasMediaCondition(kind: 'photo' | 'attachment' | 'voice' | 'link') {
+  if (kind === 'link') {
+    return sql`exists (
+      select 1 from ${messages} m
+      where m.conversation_id = ${conversations.id}
+        and m.body ~* '(https?://|www\.)'
+    )`;
+  }
+
+  const attachmentWhere =
+    kind === 'photo'
+      ? sql`and a.mime_type like 'image/%'`
+      : kind === 'voice'
+        ? sql`and a.is_voice_memo = true`
+        : sql``;
+
+  return sql`exists (
+    select 1 from ${attachments} a
+    join ${messages} m on m.id = a.message_id
+    where m.conversation_id = ${conversations.id} ${attachmentWhere}
+  )`;
+}
+
 /** SQL conditions shared by the list query and the per-view counts. */
 function buildConversationWhere(filter: ConversationFilter) {
   const where = [];
 
   if (filter.status === 'active') {
     where.push(inArray(conversations.status, INBOX_STATUSES));
+  } else if (filter.status === 'drafts') {
+    // Drafts is the one folder that isn't a status, and it's per-person: with
+    // no user in context it must match nothing rather than everything.
+    where.push(
+      filter.currentUserId
+        ? sql`exists (
+            select 1 from ${drafts} d
+            where d.conversation_id = ${conversations.id}
+              and d.user_id = ${filter.currentUserId}
+              and length(btrim(d.body)) > 0
+          )`
+        : sql`false`,
+    );
   } else if (filter.status && filter.status !== 'all') {
     where.push(eq(conversations.status, filter.status));
   }
@@ -91,6 +140,7 @@ function buildConversationWhere(filter: ConversationFilter) {
   }
 
   if (filter.readNoReply) where.push(READ_NO_REPLY);
+  if (filter.has) where.push(hasMediaCondition(filter.has));
   if (filter.slaBreached) where.push(sql`${conversations.slaBreachedAt} is not null`);
   if (filter.unreadOnly) where.push(sql`${conversations.unreadCount} > 0`);
 
@@ -143,7 +193,13 @@ export async function listConversations(filter: ConversationFilter = {}) {
     limit: 100,
     // Carried on every row so the client-side filter can apply the same rule
     // the server does without a second round trip.
-    extras: { readNoReply: READ_NO_REPLY.as('read_no_reply') },
+    extras: {
+      readNoReply: READ_NO_REPLY.as('read_no_reply'),
+      hasPhoto: hasMediaCondition('photo').as('has_photo'),
+      hasAttachment: hasMediaCondition('attachment').as('has_attachment'),
+      hasVoice: hasMediaCondition('voice').as('has_voice'),
+      hasLink: hasMediaCondition('link').as('has_link'),
+    },
     with: {
       // Identities come along so an unnamed thread can show the phone number
       // instead of a blank row.
@@ -252,6 +308,12 @@ export async function inboxCounts(currentUserId: string) {
       unassigned: sql<number>`count(*) filter (where ${conversations.assigneeId} is null and ${conversations.status} in ('open','pending'))`,
       snoozed: sql<number>`count(*) filter (where ${conversations.status} = 'snoozed')`,
       closed: sql<number>`count(*) filter (where ${conversations.status} = 'closed')`,
+      // Drafts are per-person, so this one is not a property of the workspace
+      // the way the others are.
+      drafts: sql<number>`(
+        select count(*) from ${drafts} d
+        where d.user_id = ${currentUserId} and length(btrim(d.body)) > 0
+      )`,
     })
     .from(conversations);
   return {
@@ -259,6 +321,7 @@ export async function inboxCounts(currentUserId: string) {
     mine: Number(row?.mine ?? 0),
     unassigned: Number(row?.unassigned ?? 0),
     snoozed: Number(row?.snoozed ?? 0),
+    drafts: Number(row?.drafts ?? 0),
     closed: Number(row?.closed ?? 0),
   };
 }

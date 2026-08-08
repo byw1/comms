@@ -54,6 +54,7 @@ export function useInboxFilters() {
       slaBreached: searchParams.get('sla') === 'breached',
       unreadOnly: searchParams.get('unread') === '1',
       readNoReply: searchParams.get('seen') === '1',
+      has: searchParams.get('has') ?? undefined,
       sort: searchParams.get('sort') ?? 'newest',
     }),
     [searchParams],
@@ -91,7 +92,8 @@ export function useInboxFilters() {
     filters.priorityIn.length +
     (filters.slaBreached ? 1 : 0) +
     (filters.unreadOnly ? 1 : 0) +
-    (filters.readNoReply ? 1 : 0);
+    (filters.readNoReply ? 1 : 0) +
+    (filters.has ? 1 : 0);
 
   const clearAll = useCallback(() => router.push('/inbox'), [router]);
 
@@ -329,6 +331,13 @@ export function FilterBar({
         ))}
         {filters.slaBreached && (
           <FilterChip key="sla" label="Breaching SLA" onClear={() => setParam('sla', null)} />
+        )}
+        {filters.has && (
+          <FilterChip
+            key="has"
+            label={`has: ${filters.has}`}
+            onClear={() => setParam('has', null)}
+          />
         )}
         {filters.readNoReply && (
           <FilterChip

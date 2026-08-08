@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   CheckCheck,
@@ -16,6 +16,12 @@ import { cn } from '@/lib/utils';
 import { clockTime, dayLabel } from '@/lib/format';
 import { markRead } from '@/server/actions/inbox';
 import { MessageActions } from '@/components/inbox/message-actions';
+import {
+  Highlighted,
+  ThreadFindBar,
+  findOffsets,
+  type FindMatch,
+} from '@/components/inbox/thread-find';
 
 type Attachment = {
   id: string;
@@ -201,10 +207,59 @@ export function MessageThread({
   onReplyTo?: (m: { id: string; body: string | null; guid: string | null }) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const nodeRefs = useRef(new Map<string, HTMLDivElement | null>());
+
+  // ---- Find in conversation -------------------------------------------------
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findIndex, setFindIndex] = useState(0);
 
   useEffect(() => {
+    const open = () => setFindOpen(true);
+    window.addEventListener('comms:thread-find', open);
+    return () => window.removeEventListener('comms:thread-find', open);
+  }, []);
+
+  // Reset when the conversation changes — carrying a query and an index into a
+  // different thread would scroll to an arbitrary message.
+  useEffect(() => {
+    setFindOpen(false);
+    setFindQuery('');
+    setFindIndex(0);
+  }, [conversationId]);
+
+  const matches: FindMatch[] = useMemo(() => {
+    const q = findQuery.trim();
+    if (q.length < 2) return [];
+    const out: FindMatch[] = [];
+    for (const m of messages) {
+      if (!m.body) continue;
+      for (const offset of findOffsets(m.body, q)) out.push({ messageId: m.id, offset });
+    }
+    return out;
+  }, [messages, findQuery]);
+
+  // A shrinking result set must not leave the index pointing past the end.
+  useEffect(() => setFindIndex(0), [findQuery]);
+  const activeMatch = matches[Math.min(findIndex, Math.max(matches.length - 1, 0))] ?? null;
+
+  useEffect(() => {
+    if (!activeMatch) return;
+    nodeRefs.current
+      .get(activeMatch.messageId)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [activeMatch]);
+
+  function step(delta: 1 | -1) {
+    if (matches.length === 0) return;
+    setFindIndex((i) => (i + delta + matches.length) % matches.length);
+  }
+
+  useEffect(() => {
+    // Don't fight the find bar for the scroll position.
+    if (findOpen && findQuery) return;
     bottomRef.current?.scrollIntoView({ behavior: 'auto' });
-  }, [messages.length]);
+  }, [messages.length, findOpen, findQuery]);
 
   useEffect(() => {
     void markRead(conversationId);
@@ -235,8 +290,21 @@ export function MessageThread({
   })();
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-5 md:py-6">
-      <div className="mx-auto w-full max-w-[680px] space-y-1">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <ThreadFindBar
+        open={findOpen}
+        query={findQuery}
+        onQueryChange={setFindQuery}
+        onClose={() => {
+          setFindOpen(false);
+          setFindQuery('');
+        }}
+        matchCount={matches.length}
+        activeIndex={matches.length ? Math.min(findIndex, matches.length - 1) : 0}
+        onStep={step}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-5 md:py-6">
+        <div className="mx-auto w-full max-w-[680px] space-y-1">
         {messages.map((m, i) => {
           const stamp = m.sentAt ?? m.createdAt;
           const day = dayLabel(stamp);
@@ -298,7 +366,12 @@ export function MessageThread({
             next.isPrivateNote === m.isPrivateNote;
 
           return (
-            <div key={m.id}>
+            <div
+              key={m.id}
+              ref={(el) => {
+                nodeRefs.current.set(m.id, el);
+              }}
+            >
               {dayDivider}
               <div
                 className={cn(
@@ -367,7 +440,21 @@ export function MessageThread({
                       Internal note
                     </p>
                   )}
-                    {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+                    {m.body && (
+                      <p className="whitespace-pre-wrap break-words">
+                        {findQuery.trim().length >= 2 ? (
+                          <Highlighted
+                            text={m.body}
+                            query={findQuery.trim()}
+                            activeOffset={
+                              activeMatch?.messageId === m.id ? activeMatch.offset : undefined
+                            }
+                          />
+                        ) : (
+                          m.body
+                        )}
+                      </p>
+                    )}
                     {m.attachments.map((a) => (
                       <AttachmentView key={a.id} att={a} onBubble={isOutbound && !isNote} />
                     ))}
@@ -399,7 +486,8 @@ export function MessageThread({
             </div>
           );
         })}
-        <div ref={bottomRef} />
+          <div ref={bottomRef} />
+        </div>
       </div>
     </div>
   );

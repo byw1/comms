@@ -78,6 +78,11 @@ export function KeyboardShortcuts() {
 
     'compose.new': () => window.dispatchEvent(new Event('comms:new-conversation')),
     'app.search': () => window.dispatchEvent(new Event('comms:open-palette')),
+    // Registered only with a thread open. A no-op handler would still swallow
+    // the keypress, taking the browser's own find away on every other screen.
+    ...(activeId
+      ? { 'app.find': () => window.dispatchEvent(new Event('comms:thread-find')) }
+      : {}),
     'app.help': () => setHelpOpen((o) => !o),
   });
 

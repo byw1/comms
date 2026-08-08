@@ -4,7 +4,7 @@ import { users } from './auth.js';
 
 /** The filter set behind a saved view — mirrors the inbox filter bar. */
 export interface ViewFilters {
-  status?: 'open' | 'pending' | 'snoozed' | 'closed' | 'active' | 'all';
+  status?: 'open' | 'pending' | 'snoozed' | 'closed' | 'drafts' | 'active' | 'all';
   /** A user id, or 'me' / 'unassigned'. */
   assignee?: string;
   inboxId?: string;
