@@ -1,16 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRealtime, useCurrentUser } from '@/components/app/realtime-provider';
+import { useEffect } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn, initials } from '@/lib/utils';
-
-type Peer = { userId: string; name: string; state: 'viewing' | 'typing'; expires: number };
+import { firstNames, usePeers, type Peer } from '@/lib/use-peers';
 
 /** Shows other agents currently viewing/typing in this conversation (collision avoidance). */
 export function PresenceBar({ conversationId }: { conversationId: string }) {
-  const me = useCurrentUser();
-  const [peers, setPeers] = useState<Record<string, Peer>>({});
+  const list = usePeers(conversationId);
 
   // Heartbeat our own "viewing" presence while this conversation is open.
   useEffect(() => {
@@ -30,46 +27,8 @@ export function PresenceBar({ conversationId }: { conversationId: string }) {
     };
   }, [conversationId]);
 
-  useRealtime((e) => {
-    if (e.type !== 'presence' || e.conversationId !== conversationId) return;
-    if (me && e.userId === me.id) return;
-    setPeers((prev) => {
-      const next = { ...prev };
-      if (e.state === 'left') {
-        if (e.userId) delete next[e.userId];
-      } else if (e.userId) {
-        next[e.userId] = {
-          userId: e.userId,
-          name: e.userName ?? 'Agent',
-          state: e.state === 'typing' ? 'typing' : 'viewing',
-          expires: Date.now() + 8000,
-        };
-      }
-      return next;
-    });
-  });
-
-  // Expire stale peers (missed "left" events).
-  useEffect(() => {
-    const iv = setInterval(() => {
-      setPeers((prev) => {
-        const now = Date.now();
-        let changed = false;
-        const next: Record<string, Peer> = {};
-        for (const [k, v] of Object.entries(prev)) {
-          if (v.expires >= now) next[k] = v;
-          else changed = true;
-        }
-        return changed ? next : prev;
-      });
-    }, 3000);
-    return () => clearInterval(iv);
-  }, []);
-
-  const list = Object.values(peers);
   if (list.length === 0) return null;
   const typing = list.filter((p) => p.state === 'typing');
-  const firstNames = (ps: Peer[]) => ps.map((p) => p.name.split(' ')[0]).join(', ');
 
   return (
     <div

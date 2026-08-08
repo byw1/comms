@@ -2,7 +2,16 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { toast } from 'sonner';
-import { Send, Zap, StickyNote, CornerDownLeft, Clock, CornerUpLeft, X } from 'lucide-react';
+import {
+  Send,
+  Zap,
+  StickyNote,
+  CornerDownLeft,
+  Clock,
+  CornerUpLeft,
+  X,
+  Users,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -28,6 +37,7 @@ import { SEND_LATER_PRESETS } from '@/lib/snooze';
 import { CustomTimePicker } from '@/components/inbox/time-picker';
 import { cn } from '@/lib/utils';
 import { useKeymap } from '@/components/app/keymap-provider';
+import { firstNames, useTypingPeers } from '@/lib/use-peers';
 
 export function Composer({
   conversationId,
@@ -56,12 +66,18 @@ export function Composer({
   onSubmit: (body: string, isNote: boolean, scheduledFor?: Date) => Promise<boolean>;
 }) {
   const { enterSends } = useKeymap();
+  // Read at the composer, not just in the header strip: a warning you have
+  // stopped noticing is not a warning, and the cost of a duplicate reply to a
+  // customer is paid by them, not by us.
+  const typingPeers = useTypingPeers(conversationId);
   const [body, setBody] = useState(initialDraft?.body ?? '');
   const [isNote, setIsNote] = useState(initialDraft?.isPrivateNote ?? false);
   const [focused, setFocused] = useState(false);
   const [pending, start] = useTransition();
   const ref = useRef<HTMLTextAreaElement>(null);
   const lastTypingPing = useRef(0);
+  /** Set once the user has acknowledged a collision, so we ask only once. */
+  const confirmedCollision = useRef(false);
   const picker = useMacroPickerState(macros, body);
 
   // The global `r` shortcut focuses the composer from anywhere in the thread.
@@ -158,6 +174,19 @@ export function Composer({
   function submit(scheduledFor?: Date) {
     const trimmed = body.trim();
     if (!trimmed) return;
+
+    // Confirm rather than block. The person at the keyboard may know exactly
+    // what they are doing — but they should have to say so, once.
+    if (typingPeers.length > 0 && !isNote && !confirmedCollision.current) {
+      confirmedCollision.current = true;
+      toast.warning(`${firstNames(typingPeers)} is also replying`, {
+        description: 'Send anyway?',
+        action: { label: 'Send', onClick: () => submit(scheduledFor) },
+        duration: 8000,
+      });
+      return;
+    }
+    confirmedCollision.current = false;
     // Optimistic: clear the field immediately — the shell shows the bubble.
     setBody('');
     savedBody.current = '';
@@ -241,8 +270,27 @@ export function Composer({
 
   const canSend = Boolean(body.trim()) && !pending;
 
+  const collision = typingPeers.length > 0 && !isNote;
+
   return (
     <div className="mx-auto w-full max-w-[680px] px-3 pb-3 pt-1">
+      <AnimatePresence>
+        {collision && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            role="status"
+            className="type-caption mb-1.5 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning-muted px-2.5 py-1.5 text-warning"
+          >
+            <Users className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1">
+              {firstNames(typingPeers)} {typingPeers.length > 1 ? 'are' : 'is'} replying to this
+              conversation
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {picker.open && (
         <MacroPicker
           macros={macros}
